@@ -6,6 +6,12 @@ VOYGE.studio is a high-fidelity travel intelligence platform designed to turn fr
 
 ![VOYGE Dashboard Preview](./public/preview.jpg)
 
+## 🗡️ The Why
+
+We all have them: hundreds of bookmarked Reels and TikToks of "hidden gems," aesthetic cafes, and breathtaking viewpoints. But when it actually comes time to travel, those saves remain buried in an endless scroll. 
+
+**VOYGE.studio** solves this by acting as the bridge between digital inspiration and physical exploration. It doesn't just store your spots; it understands them. By combining the precision of **GPT-4o** with the mathematical efficiency of the **Mapbox Optimization Engine**, VOYGE transforms your social media clutter into a logical, day-by-day path.
+
 ## 🚀 Core Features
 
 ### 1. The Link Engine
