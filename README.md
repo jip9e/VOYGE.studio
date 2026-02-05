@@ -4,7 +4,7 @@
 
 VOYGE.studio is a high-fidelity travel intelligence platform designed to turn fragmented social media "saves" into actionable, optimized itineraries. Built with a Vercel-inspired aesthetic, it bridges the gap between digital inspiration and physical exploration.
 
-![VOYGE Dashboard Preview](https://voyge-studio.vercel.app/api/proxy?url=https://raw.githubusercontent.com/jip9e/VOYGE.studio/main/public/preview.png)
+![VOYGE Dashboard Preview](./public/preview.jpg)
 
 ## 🚀 Core Features
 
