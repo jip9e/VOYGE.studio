@@ -1,5 +1,8 @@
 # VOYGE.studio 🗡️
 
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![License](https://img.shields.io/badge/license-Proprietary-red)
+
 **Your social media saves, mathematically perfected.**
 
 VOYGE.studio is a high-fidelity travel intelligence platform designed to turn fragmented social media "saves" into actionable, optimized itineraries. Built with a Vercel-inspired aesthetic and a "Roamy" mobile-first UX, it bridges the gap between digital inspiration and physical exploration.
@@ -35,7 +38,7 @@ We all have them: hundreds of bookmarked Reels and TikToks of "hidden gems," aes
 
 ## 🛠️ Tech Stack
 
-*   **Frontend:** Next.js 15 (App Router) + Tailwind CSS + Framer Motion.
+*   **Frontend:** Next.js 16 (App Router) + Tailwind CSS 4 + Framer Motion.
 *   **Backend:** Vercel Serverless Functions.
 *   **Database & Auth:** Firebase Firestore & Firebase Auth.
 *   **Intelligence:** GitHub Models (GPT-4o) + Pexels API + RapidAPI Scrapers.
@@ -64,4 +67,8 @@ npm run dev
 
 ## 📝 License
 
-Private / Personal Use. 🗡️
+Private / Personal Use — see [LICENSE](./LICENSE) for details. 🗡️
+
+## 📋 Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md) for release history.
