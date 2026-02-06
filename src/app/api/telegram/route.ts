@@ -100,8 +100,26 @@ export async function POST(req: NextRequest) {
     const saved = [];
     for (const spot of raw_spots) {
       const geo = await geocodeSpot(spot.name, spot.city);
+      
+      // Fetch Pexels image if scraper thumbnail is missing or poor quality
+      let thumbnail = data.thumbnail;
+      const pexelsKey = process.env.PEXELS_API_KEY;
+      if (!thumbnail && pexelsKey) {
+        try {
+          const pexelsRes = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(spot.name + " " + spot.city)}&per_page=1`, {
+            headers: { Authorization: pexelsKey }
+          });
+          const pexelsData = await pexelsRes.json();
+          if (pexelsData.photos?.length > 0) thumbnail = pexelsData.photos[0].src.large;
+        } catch (e) {
+          console.error("Pexels fetch fail in telegram route", e);
+        }
+      }
+
       await addDoc(collection(db, "spots"), {
-        ...spot, ...geo,
+        ...spot, 
+        ...geo,
+        thumbnail,
         user_id: internalUserId,
         original_link: url,
         created_at: serverTimestamp()

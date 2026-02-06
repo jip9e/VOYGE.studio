@@ -13,7 +13,13 @@ export async function extractSpotData(caption: string) {
   const prompt = `
     Extract travel spot info from this social media caption.
     Return ONLY a JSON object with a 'travel_spots' key containing an array of objects.
-    Each object must have: name, city, category (Food, Stay, View, Activity, Shopping), vibe (3 words).
+    Each object must have: 
+    - name: (String)
+    - city: (String)
+    - country: (String)
+    - category: (Food, Stay, View, Activity, Shopping, Museum, Park, Attraction)
+    - vibe: (3 words)
+    - description: (A punchy, one-sentence description of the place, under 80 characters)
     
     Caption: "${caption.substring(0, 1000)}"
   `;

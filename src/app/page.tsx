@@ -7,10 +7,13 @@ import {
   MoreHorizontal, User, Sparkles, ExternalLink, 
   Compass, Route, Trash2, Heart, ChevronLeft, 
   ChevronRight, LogIn, X, Loader2, RefreshCw,
-  Folder, Globe, Menu, Key, Check, Copy, Share
+  Folder, Globe, Menu, Key, Check, Copy, Share, Plus, Briefcase, 
+  Map as MapIcon, Image as ImageIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import dynamicMap from "next/dynamic";
+import BottomSheet from "@/components/BottomSheet";
+import { getCountryFlag } from "@/lib/flags";
 
 // Firebase Imports
 import { auth, db } from "@/lib/firebase";
@@ -56,12 +59,302 @@ interface TravelSpot {
   thumbnail?: string;
   original_link?: string;
   is_favorite?: boolean;
+  description?: string;
+}
+
+function SidebarContent({ 
+  masterSpots, routeGeometry, setRouteGeometry, activeFilter, setActiveFilter, groupedSpots, 
+  toggleFolder, expandedFolders, runOptimization, isOptimizing, deleteFolder, 
+  toggleFavorite, deleteSpot, user, telegramId, setShowShortcutInstructions, 
+  generateLinkToken, linkToken, copied, setCopied, fetchSpots, dbStatus, 
+  isMobile, setSidebarVisible, activeCategory, setActiveCategory,
+  inputValue, setInputValue, handlePaste, isAnalyzing, isBloomed, isFocused, setIsFocused,
+  suggestions, handleSearchSelect, isSearching
+}: any) {
+  return (
+    <>
+            {/* SEARCH BAR INTEGRATION */}
+      <div className="mb-8 pointer-events-auto relative">
+        <form onSubmit={handlePaste} className="w-full relative group">
+          <div className="relative bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-3 gap-3 transition-all duration-500 hover:border-white/20">
+            {isSearching ? <Loader2 className="w-4 h-4 text-white/40 animate-spin" /> : <Search className={cn("w-4 h-4 transition-all duration-700", isFocused ? "text-white rotate-180" : "text-[#404040]")} />}
+            <input 
+              type="text" placeholder="Add link or search place..." 
+              className="bg-transparent border-none outline-none flex-1 text-xs placeholder-[#404040] font-black tracking-tighter text-white" 
+              value={inputValue} onChange={(e) => setInputValue(e.target.value)} onFocus={() => setIsFocused(true)} onBlur={() => setTimeout(() => setIsFocused(false), 200)} 
+            />
+            <button type="submit" className="bg-white text-black px-4 py-1.5 rounded-lg text-[9px] font-black hover:scale-105 transition-all active:scale-95 disabled:opacity-20 uppercase tracking-widest" disabled={isAnalyzing}>
+              {isAnalyzing ? "..." : "Add"}
+            </button>
+          </div>
+        </form>
+
+        {/* Suggestions Dropdown */}
+        <AnimatePresence>
+          {isFocused && suggestions.length > 0 && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
+              className="absolute top-full left-0 right-0 mt-2 bg-[#0a0a0a] border border-white/10 rounded-2xl overflow-hidden z-[200] shadow-2xl"
+            >
+              {suggestions.map((s: any, i: number) => (
+                <button 
+                  key={i}
+                  onClick={() => handleSearchSelect(s)}
+                  className="w-full flex flex-col gap-0.5 p-4 text-left hover:bg-white/5 transition-colors border-b border-white/5 last:border-none group"
+                >
+                  <p className="text-xs font-black text-white group-hover:text-white transition-colors">{s.name}</p>
+                  <p className="text-[9px] text-[#525252] font-bold uppercase tracking-tighter">{s.city}, {s.country}</p>
+                </button>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <div className="flex items-center justify-between px-2 py-6 mb-8">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-white rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.3)]">
+            <Navigation className="text-black w-6 h-6 fill-current" />
+          </div>
+          <span className="text-2xl font-black tracking-tighter uppercase italic tracking-widest text-white">Voyge</span>
+        </div>
+        {isMobile && <button onClick={() => setSidebarVisible(false)} className="p-2 text-[#404040]"><X className="w-6 h-6" /></button>}
+      </div>
+
+            <div className={cn("flex gap-3 mb-8 overflow-x-auto pb-2 custom-scrollbar pointer-events-auto no-scrollbar", !isMobile && "gap-4")}>
+        {["All", "Attractions", "Museum", "Parks", "Food"].map(cat => (
+          <button 
+            key={cat}
+            onClick={() => setActiveCategory(cat)}
+            className={cn(
+              "px-5 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border",
+              activeCategory === cat 
+                ? "bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]" 
+                : "bg-white/5 text-[#737373] border-white/5 hover:text-white hover:bg-white/10"
+            )}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      <nav className="space-y-1 flex-1 overflow-y-auto custom-scrollbar pr-2 relative pointer-events-auto">
+        {[
+          { icon: MapPin, label: "Master Map", id: "all", count: masterSpots.length },
+          { icon: Compass, label: "Itineraries", id: "itineraries", count: routeGeometry ? 1 : 0 },
+          { icon: Heart, label: "Favorites", id: "favorites", count: masterSpots.filter((s: any) => s.is_favorite).length },
+        ].map((item) => (
+          <button 
+            key={item.label} 
+            onClick={(e) => { e.stopPropagation(); if (item.id === "all" || item.id === "favorites") setActiveFilter(item.id as any); }}
+            className={cn(
+              "w-full flex items-center justify-between px-4 py-3.5 rounded-2xl text-sm transition-all group mb-1 cursor-pointer pointer-events-auto", 
+              (item.id === activeFilter) ? "bg-white text-black shadow-xl" : "text-[#a1a1aa] hover:bg-white/5 hover:text-white"
+            )}
+          >
+            <div className="flex items-center gap-3 pointer-events-none">
+              <item.icon className={cn("w-4 h-4", (item.id === activeFilter) ? "stroke-[3px]" : "stroke-2")} />
+              <span className="font-bold tracking-tight">{item.label}</span>
+            </div>
+            {item.count !== undefined && <span className={cn("text-[10px] font-black px-2 py-0.5 rounded-lg", (item.id === activeFilter) ? "bg-black/10 text-black" : "bg-white/5")}>{item.count}</span>}
+          </button>
+        ))}
+        
+        <div className="h-10" />
+        
+        <div className="flex items-center justify-between px-4 mb-4">
+          <p className="text-[10px] uppercase font-black tracking-[0.2em] text-[#404040]">Countries</p>
+          <Globe className="w-3 h-3 text-[#404040]" />
+        </div>
+
+        <div className="space-y-2 pointer-events-auto">
+          {Object.entries(groupedSpots).map(([country, cityGroups]: [string, any]) => {
+            const allSpotsInCountry = Object.values(cityGroups).flat() as TravelSpot[];
+            return (
+              <div key={country} className="space-y-1">
+                <button 
+                  onClick={() => toggleFolder(country)}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.06] transition-all cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{getCountryFlag(country)}</span>
+                      <Folder className={cn("w-4 h-4 transition-all", expandedFolders.includes(country) ? "fill-white text-white" : "text-[#525252]")} />
+                      <span className="text-xs font-black uppercase tracking-widest truncate max-w-[120px]">{country}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); runOptimization(allSpotsInCountry); }}
+                        disabled={isOptimizing}
+                        className="p-1.5 text-white/60 hover:text-white transition-all bg-white/10 rounded-lg active:scale-95"
+                      >
+                        <Route className="w-3.5 h-3.5" />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); deleteFolder(country, allSpotsInCountry); }}
+                        className="p-1.5 text-red-500/60 hover:text-red-500 transition-all bg-white/10 rounded-lg active:scale-95"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <span className="text-[9px] font-black text-[#525252] bg-white/5 px-2 py-0.5 rounded-md">{allSpotsInCountry.length}</span>
+                </button>
+
+                <AnimatePresence>
+                  {expandedFolders.includes(country) && (
+                    <motion.div 
+                      initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                      className="overflow-hidden space-y-6 pl-4 py-4"
+                    >
+                      {Object.entries(cityGroups).map(([city, spots]: [string, any]) => (
+                        <div key={city} className="space-y-2">
+                          <div className="flex items-center justify-between pr-2 border-b border-white/5 pb-1 mb-3">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-[#404040] italic">{city}</p>
+                            <span className="text-[8px] font-bold text-white/20">{spots.length}</span>
+                          </div>
+                          <div className="space-y-2">
+                            {spots.map((spot: any, i: number) => (
+                              <div 
+                                key={spot.id || i} 
+                                onClick={(e) => { 
+                                  e.stopPropagation(); 
+                                  if (spot.coordinates) (window as any).flyToSpot?.(...spot.coordinates);
+                                  if (isMobile) setSidebarVisible(false);
+                                }}
+                                className={cn(
+                                  "group relative flex items-center gap-4 p-3 rounded-[24px] bg-white/[0.02] border border-transparent hover:border-white/10 hover:bg-white/[0.03] transition-all cursor-pointer overflow-hidden",
+                                  !isMobile && "p-4 gap-5"
+                                )}
+                              >
+                                <div className={cn("w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center border border-white/5 group-hover:bg-white/10 transition-colors", !isMobile && "w-12 h-12 rounded-[20px]")}>
+                                  <MapPin className={cn("w-5 h-5 text-[#404040] group-hover:text-white transition-colors", !isMobile && "w-6 h-6")} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className={cn("text-xs font-black truncate tracking-tight text-white/90 group-hover:text-white", !isMobile && "text-sm")}>{spot.name}</p>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <p className="text-[9px] text-[#525252] font-black uppercase tracking-tighter">{spot.category || "Spot"}</p>
+                                    <span className="w-1 h-1 bg-white/10 rounded-full" />
+                                    <p className="text-[9px] text-[#404040] font-bold italic">{spot.city}</p>
+                                  </div>
+                                  {spot.description && (
+                                    <p className={cn("text-[9px] text-[#737373] mt-1 line-clamp-1 group-hover:text-white/60 transition-colors leading-tight", !isMobile && "text-[10px] line-clamp-2")}>
+                                      {spot.description}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className={cn("w-16 h-16 rounded-[20px] overflow-hidden bg-black border border-white/5 flex-shrink-0 relative group-hover:scale-105 transition-transform duration-500", !isMobile && "w-20 h-20 rounded-[24px]")}>
+                                  {spot.thumbnail ? (
+                                    <img src={spot.thumbnail} className="w-full h-full object-cover grayscale opacity-40 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-700" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center bg-white/5 opacity-20"><Globe className="w-6 h-6" /></div>
+                                  )}
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                                </div>
+                                
+                                {/* Actions Overlay */}
+                                <div className="absolute right-2 top-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); if (spot.id) toggleFavorite(spot.id, !!spot.is_favorite); }} 
+                                    className={cn("p-1.5 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 transition-all active:scale-125", spot.is_favorite ? "text-red-500" : "text-white/40 hover:text-white")}
+                                  >
+                                    <Heart className={cn("w-4 h-4", spot.is_favorite && "fill-current")} />
+                                  </button>
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); deleteSpot(spot.id, i); }} 
+                                    className="p-1.5 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 text-white/40 hover:text-red-500 transition-all"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="h-10" />
+        <div className="px-4 mb-4">
+          <p className="text-[10px] uppercase font-black tracking-[0.2em] text-[#404040] mb-4">Integrations</p>
+          <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.05] flex flex-col gap-3">
+            <div className="flex items-center gap-2 text-white/40 mb-1">
+              <Share className="w-3 h-3" />
+              <span className="text-[10px] font-black uppercase">Sync Shortcut</span>
+            </div>
+            {telegramId ? (
+              <button 
+                onClick={() => setShowShortcutInstructions(true)}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-white text-black rounded-xl text-[10px] font-black uppercase transition-all hover:scale-[1.02] active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.2)]"
+              >
+                Setup Shortcut
+              </button>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-[8px] text-[#737373] font-bold uppercase leading-tight italic">Link your Telegram first to unlock the iPhone Shortcut</p>
+                {linkToken ? (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between bg-black rounded-lg p-2 border border-white/10">
+                      <code className="text-[10px] font-black text-white">{linkToken}</code>
+                      <button onClick={() => { navigator.clipboard.writeText(`/link ${linkToken}`); setCopied(true); setTimeout(() => setCopied(false), 2000); }} className="text-white/40 hover:text-white transition-all">
+                        {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={generateLinkToken} className="w-full flex items-center justify-center gap-2 py-2 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl text-[9px] font-black uppercase transition-all">
+                    <Key className="w-3 h-3" /> Get Code
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </nav>
+
+      <div className="mt-6 px-2 space-y-2 pointer-events-auto">
+         {routeGeometry ? (
+           <button onClick={(e) => { e.stopPropagation(); setRouteGeometry(null); }} className="w-full bg-white text-black hover:bg-[#e5e5e5] py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-2xl active:scale-95 cursor-pointer pointer-events-auto">
+             <X className="w-5 h-5" />
+             <span className="text-[11px] font-black uppercase tracking-widest">Clear Journey</span>
+           </button>
+         ) : (
+           <button onClick={(e) => { e.stopPropagation(); runOptimization(masterSpots); }} disabled={masterSpots.length < 2 || isOptimizing} className="w-full bg-white text-black hover:bg-[#e5e5e5] py-4 rounded-2xl flex items-center justify-center gap-3 transition-all disabled:opacity-20 shadow-2xl active:scale-95 cursor-pointer pointer-events-auto">
+             <Route className={cn("w-5 h-5", isOptimizing && "animate-spin")} />
+             <span className="text-[11px] font-black uppercase tracking-widest">{isOptimizing ? "Calculating..." : "Plan All Spots"}</span>
+           </button>
+         )}
+         {user && (
+           <button onClick={(e) => { e.stopPropagation(); fetchSpots(user.uid); }} className="w-full flex items-center justify-center gap-2 py-2 text-[#404040] hover:text-white transition-all text-[9px] font-black uppercase tracking-widest cursor-pointer pointer-events-auto">
+             <RefreshCw className="w-3 h-3" /> Sync Firestore
+           </button>
+         )}
+      </div>
+
+      <div className="mt-8 border-t border-white/5 pt-6 flex items-center gap-3 px-2 mb-2 pointer-events-none">
+        <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10"><User className="w-5 h-5 text-[#737373]" /></div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-bold truncate text-white/80">{user ? user.email.split("@")[0] : "Guest Account"}</p>
+          <p className={cn("text-[9px] uppercase tracking-tighter font-black transition-all", dbStatus.includes("Error") ? "text-red-500" : "text-[#525252]")}>{dbStatus}</p>
+        </div>
+        <div className={cn("w-2 h-2 rounded-full shadow-[0_0_10px]", user ? "bg-green-500 shadow-green-500/40" : "bg-orange-500 shadow-orange-500/40")} />
+      </div>
+    </>
+  );
 }
 
 export default function ZenDashboard() {
-  const [url, setUrl] = useState("");
+  const [inputValue, setInputValue] = useState("");
   const [isBloomed, setIsBloomed] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [masterSpots, setMasterSpots] = useState<TravelSpot[]>([]);
@@ -70,6 +363,7 @@ export default function ZenDashboard() {
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<string[]>([]);
   const [activeFilter, setActiveFilter] = useState<"all" | "favorites">("all");
+  const [activeCategory, setActiveCategory] = useState("All");
   const [linkToken, setLinkToken] = useState("");
   const [telegramId, setTelegramId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -82,6 +376,7 @@ export default function ZenDashboard() {
   const [password, setPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState("Disconnected");
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   // Mobile detection
   const [isMobile, setIsMobile] = useState(false);
@@ -93,6 +388,85 @@ export default function ZenDashboard() {
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
+
+  useEffect(() => {
+    const fetchSuggestions = async () => {
+      if (inputValue.length < 3 || inputValue.startsWith("http")) {
+        setSuggestions([]);
+        return;
+      }
+      setIsSearching(true);
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(inputValue)}`);
+        const data = await res.json();
+        setSuggestions(data.suggestions || []);
+      } catch (e) {
+        console.error("Search fail", e);
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    const timeout = setTimeout(fetchSuggestions, 300);
+    return () => clearTimeout(timeout);
+  }, [inputValue]);
+
+  const handleSearchSelect = async (suggestion: any) => {
+    setInputValue("");
+    setSuggestions([]);
+    setIsAnalyzing(true);
+    setIsBloomed(true);
+    setCurrentAnalysis([]);
+
+    try {
+      // 1. Get detailed info + Pexels image
+      const enhanceRes = await fetch("/api/enhance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          name: suggestion.name, 
+          city: suggestion.city, 
+          country: suggestion.country 
+        }),
+      });
+      const aiData = await enhanceRes.json();
+
+      // 2. Get coordinates
+      const { geocodeSpot } = await import("@/lib/geo");
+      const geo = await geocodeSpot(suggestion.name, suggestion.city);
+
+      const newSpot: TravelSpot = {
+        name: suggestion.name,
+        city: suggestion.city || geo.country, // Fallback
+        country: suggestion.country || geo.country,
+        category: aiData.category,
+        vibe: aiData.vibe,
+        description: aiData.description,
+        thumbnail: aiData.thumbnail,
+        coordinates: geo.coordinates,
+        full_address: geo.full_address,
+        is_favorite: false
+      };
+
+      setCurrentAnalysis([newSpot]);
+
+      // Save to Firebase
+      if (user) {
+        await addDoc(collection(db, "spots"), {
+          ...newSpot,
+          user_id: user.uid,
+          created_at: serverTimestamp()
+        });
+        await fetchSpots(user.uid);
+      } else {
+        setMasterSpots(prev => [newSpot, ...prev]);
+      }
+    } catch (e) {
+      console.error("Search selection fail", e);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   const fetchSpots = useCallback(async (userId: string) => {
     setDbStatus("Syncing Firestore...");
@@ -124,18 +498,24 @@ export default function ZenDashboard() {
 
   // Groups spots by country
   const groupedSpots = useMemo(() => {
-    const filtered = activeFilter === "favorites" 
+    let filtered = activeFilter === "favorites" 
       ? masterSpots.filter(s => s.is_favorite) 
       : masterSpots;
 
-    const groups: { [key: string]: TravelSpot[] } = {};
+    if (activeCategory !== "All") {
+      filtered = filtered.filter(s => s.category?.toLowerCase().includes(activeCategory.toLowerCase()));
+    }
+
+    const groups: { [key: string]: { [key: string]: TravelSpot[] } } = {};
     filtered.forEach(spot => {
       const country = spot.country || "Unknown";
-      if (!groups[country]) groups[country] = [];
-      groups[country].push(spot);
+      const city = spot.city || "Other";
+      if (!groups[country]) groups[country] = {};
+      if (!groups[country][city]) groups[country][city] = [];
+      groups[country][city].push(spot);
     });
     return groups;
-  }, [masterSpots, activeFilter]);
+  }, [masterSpots, activeFilter, activeCategory]);
 
   const toggleFolder = (country: string) => {
     setExpandedFolders(prev => 
@@ -200,7 +580,17 @@ export default function ZenDashboard() {
   // 2. THE ANALYZER
   const handlePaste = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!url.trim()) return;
+    if (!inputValue.trim()) return;
+
+    // Check if it's a URL or just text
+    const isUrl = inputValue.startsWith("http");
+
+    if (!isUrl) {
+      // If it's not a URL, we'll wait for them to pick a suggestion
+      // or we just pick the first one if they hit enter?
+      // For now, let's just trigger the search manually if needed
+      return;
+    }
 
     setIsAnalyzing(true);
     setIsBloomed(true);
@@ -211,17 +601,31 @@ export default function ZenDashboard() {
       const response = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url: inputValue }),
       });
       const data = await response.json();
       
       if (data.travel_spots) {
         const proxiedThumbnail = data.thumbnail ? `/api/proxy?url=${encodeURIComponent(data.thumbnail)}` : null;
-        const newSpots = data.travel_spots.map((s: any) => ({
-          ...s,
-          thumbnail: proxiedThumbnail,
-          original_link: url,
-          is_favorite: false
+        const newSpots = await Promise.all(data.travel_spots.map(async (s: any) => {
+          let thumbnail = proxiedThumbnail;
+          
+          if (!thumbnail) {
+            try {
+              const imgRes = await fetch(`/api/images?query=${encodeURIComponent(s.name + " " + s.city)}`);
+              const imgData = await imgRes.json();
+              thumbnail = imgData.url;
+            } catch (e) {
+              console.error("Image fetch fail", e);
+            }
+          }
+
+          return {
+            ...s,
+            thumbnail,
+            original_link: inputValue,
+            is_favorite: false
+          };
         }));
 
         setCurrentAnalysis(newSpots);
@@ -465,232 +869,168 @@ export default function ZenDashboard() {
         )}
       </div>
 
-      {/* 4. SIDEBAR / MOBILE DRAWER (Z-[100]) */}
-      <AnimatePresence>
-        {isBloomed && sidebarVisible && (
-          <>
-            {isMobile && (
-              <motion.div 
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                onClick={() => setSidebarVisible(false)}
-                className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm pointer-events-auto"
-              />
-            )}
+      {/* 4. SIDEBAR / BOTTOM SHEET (Z-[100]) */}
+      {isMobile ? (
+        <BottomSheet 
+          isOpen={isBloomed && sidebarVisible} 
+          onClose={() => setSidebarVisible(false)}
+          title="My Spots"
+        >
+          <SidebarContent 
+            masterSpots={masterSpots} routeGeometry={routeGeometry} 
+            setRouteGeometry={setRouteGeometry}
+            activeFilter={activeFilter} setActiveFilter={setActiveFilter} 
+            groupedSpots={groupedSpots} toggleFolder={toggleFolder} 
+            expandedFolders={expandedFolders} runOptimization={runOptimization} 
+            isOptimizing={isOptimizing} deleteFolder={deleteFolder} 
+            toggleFavorite={toggleFavorite} deleteSpot={deleteSpot} 
+            user={user} telegramId={telegramId} 
+            setShowShortcutInstructions={setShowShortcutInstructions} 
+            generateLinkToken={generateLinkToken} linkToken={linkToken} 
+            copied={copied} setCopied={setCopied} fetchSpots={fetchSpots} 
+            dbStatus={dbStatus} isMobile={isMobile} 
+            setSidebarVisible={setSidebarVisible} 
+            activeCategory={activeCategory} setActiveCategory={setActiveCategory}
+            inputValue={inputValue} setInputValue={setInputValue} handlePaste={handlePaste} isAnalyzing={isAnalyzing} 
+            isBloomed={isBloomed} isFocused={isFocused} setIsFocused={setIsFocused}
+            suggestions={suggestions} handleSearchSelect={handleSearchSelect} isSearching={isSearching}
+          />
+        </BottomSheet>
+      ) : (
+        <AnimatePresence>
+          {isBloomed && sidebarVisible && (
             <motion.aside
-              initial={{ x: -320, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -320, opacity: 0 }}
-              transition={{ type: "spring", damping: 25, stiffness: 100 }}
-              className={cn(
-                "fixed left-0 top-0 bottom-0 bg-[#000] border-r border-white/5 z-[100] flex flex-col p-5 shadow-[30px_0_100px_rgba(0,0,0,0.8)] pointer-events-auto",
-                isMobile ? "w-[280px]" : "w-80"
-              )}
+              initial={{ x: -400, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -400, opacity: 0 }}
+              transition={{ type: "spring", damping: 30, stiffness: 120 }}
+              className="fixed left-0 top-0 bottom-0 bg-[#000] border-r border-white/5 z-[100] flex flex-col p-6 shadow-[40px_0_120px_rgba(0,0,0,0.9)] pointer-events-auto w-[400px]"
             >
-              {!isMobile && (
+              <button 
+                onClick={(e) => { e.stopPropagation(); setSidebarVisible(false); }}
+                className="absolute -right-4 top-1/2 -translate-y-1/2 w-8 h-14 bg-[#171717] border border-white/10 rounded-full flex items-center justify-center text-[#737373] hover:text-white transition-all shadow-2xl z-[110] cursor-pointer"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+
+              <SidebarContent 
+                masterSpots={masterSpots} routeGeometry={routeGeometry} 
+                setRouteGeometry={setRouteGeometry}
+                activeFilter={activeFilter} setActiveFilter={setActiveFilter} 
+                groupedSpots={groupedSpots} toggleFolder={toggleFolder} 
+                expandedFolders={expandedFolders} runOptimization={runOptimization} 
+                isOptimizing={isOptimizing} deleteFolder={deleteFolder} 
+                toggleFavorite={toggleFavorite} deleteSpot={deleteSpot} 
+                user={user} telegramId={telegramId} 
+                setShowShortcutInstructions={setShowShortcutInstructions} 
+                generateLinkToken={generateLinkToken} linkToken={linkToken} 
+                copied={copied} setCopied={setCopied} fetchSpots={fetchSpots} 
+                dbStatus={dbStatus} isMobile={isMobile} 
+                setSidebarVisible={setSidebarVisible} 
+                activeCategory={activeCategory} setActiveCategory={setActiveCategory}
+                inputValue={inputValue} setInputValue={setInputValue} handlePaste={handlePaste} isAnalyzing={isAnalyzing} 
+                isBloomed={isBloomed} isFocused={isFocused} setIsFocused={setIsFocused}
+                suggestions={suggestions} handleSearchSelect={handleSearchSelect} isSearching={isSearching}
+              />
+            </motion.aside>
+          )}
+        </AnimatePresence>
+      )}
+
+      {/* 5. MINIMIZED TRIGGER / FLOATING NAV (Z-[150]) */}
+      <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[150] flex items-center gap-2 pointer-events-none">
+        <AnimatePresence>
+          {isBloomed && (
+            <div className="relative">
+              {/* POPOVER MENU */}
+              <AnimatePresence>
+                {isMenuOpen && (
+                  <motion.div 
+                    initial={{ y: 20, opacity: 0, scale: 0.9 }}
+                    animate={{ y: 0, opacity: 1, scale: 1 }}
+                    exit={{ y: 20, opacity: 0, scale: 0.9 }}
+                    className="absolute bottom-[100px] left-1/2 -translate-x-1/2 w-64 bg-[#0a0a0a] border border-white/10 rounded-[32px] p-2 shadow-2xl pointer-events-auto overflow-hidden"
+                  >
+                    <button 
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        runOptimization(masterSpots);
+                      }}
+                      className="w-full flex items-center gap-4 p-4 hover:bg-white/5 transition-colors text-left group"
+                    >
+                      <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center border border-white/5 group-hover:bg-white/10">
+                        <Briefcase className="w-5 h-5 text-pink-500" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-widest text-white">Create New Trip</p>
+                        <p className="text-[9px] text-[#525252] font-bold">Plan your next adventure</p>
+                      </div>
+                    </button>
+                    <div className="h-px bg-white/5 mx-2" />
+                    <button 
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        setSidebarVisible(true);
+                      }}
+                      className="w-full flex items-center gap-4 p-4 hover:bg-white/5 transition-colors text-left group"
+                    >
+                      <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center border border-white/5 group-hover:bg-white/10">
+                        <MapPin className="w-5 h-5 text-yellow-500" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-widest text-white">Add Spots</p>
+                        <p className="text-[9px] text-[#525252] font-bold">Save places you love</p>
+                      </div>
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <motion.div 
+                initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
+                className="flex items-center gap-3 bg-black/60 backdrop-blur-3xl border border-white/10 p-2 rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.5)] pointer-events-auto"
+              >
                 <button 
-                  onClick={(e) => { e.stopPropagation(); setSidebarVisible(false); }}
-                  className="absolute -right-4 top-1/2 -translate-y-1/2 w-8 h-12 bg-[#171717] border border-white/10 rounded-full flex items-center justify-center text-[#737373] hover:text-white transition-all shadow-2xl z-[110] cursor-pointer"
+                  onClick={() => { setSidebarVisible(true); setActiveFilter("all"); setIsMenuOpen(false); }}
+                  className={cn(
+                    "w-12 h-12 rounded-[24px] flex items-center justify-center transition-all",
+                    sidebarVisible && activeFilter === "all" ? "bg-white text-black" : "text-white/40 hover:text-white"
+                  )}
                 >
-                  <ChevronLeft className="w-4 h-4" />
+                  <MapIcon className="w-5 h-5" />
                 </button>
-              )}
 
-              <div className="flex items-center justify-between px-2 py-6 mb-8">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-white rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.3)]">
-                    <Navigation className="text-black w-6 h-6 fill-current" />
-                  </div>
-                  <span className="text-2xl font-black tracking-tighter uppercase italic tracking-widest text-white">Voyge</span>
-                </div>
-                {isMobile && <button onClick={() => setSidebarVisible(false)} className="p-2 text-[#404040]"><X className="w-6 h-6" /></button>}
-              </div>
-
-              <nav className="space-y-1 flex-1 overflow-y-auto custom-scrollbar pr-2 relative pointer-events-auto">
-                {[
-                  { icon: MapPin, label: "Master Map", id: "all", count: masterSpots.length },
-                  { icon: Compass, label: "Itineraries", id: "itineraries", count: routeGeometry ? 1 : 0 },
-                  { icon: Heart, label: "Favorites", id: "favorites", count: masterSpots.filter(s => s.is_favorite).length },
-                ].map((item) => (
+                <div className="relative">
                   <button 
-                    key={item.label} 
-                    onClick={(e) => { e.stopPropagation(); if (item.id === "all" || item.id === "favorites") setActiveFilter(item.id as any); }}
+                    onClick={() => {
+                      if (!isBloomed) return;
+                      setIsMenuOpen(!isMenuOpen);
+                    }}
                     className={cn(
-                      "w-full flex items-center justify-between px-4 py-3.5 rounded-2xl text-sm transition-all group mb-1 cursor-pointer pointer-events-auto", 
-                      (item.id === activeFilter) ? "bg-white text-black shadow-xl" : "text-[#a1a1aa] hover:bg-white/5 hover:text-white"
+                      "w-16 h-16 rounded-[28px] flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.3)] hover:scale-110 active:scale-90 transition-all group",
+                      isMenuOpen ? "bg-black text-white border border-white/20" : "bg-white text-black"
                     )}
                   >
-                    <div className="flex items-center gap-3 pointer-events-none">
-                      <item.icon className={cn("w-4 h-4", (item.id === activeFilter) ? "stroke-[3px]" : "stroke-2")} />
-                      <span className="font-bold tracking-tight">{item.label}</span>
-                    </div>
-                    {item.count !== undefined && <span className={cn("text-[10px] font-black px-2 py-0.5 rounded-lg", (item.id === activeFilter) ? "bg-black/10 text-black" : "bg-white/5")}>{item.count}</span>}
-                  </button>
-                ))}
-                
-                <div className="h-10" />
-                
-                <div className="flex items-center justify-between px-4 mb-4">
-                  <p className="text-[10px] uppercase font-black tracking-[0.2em] text-[#404040]">Countries</p>
-                  <Globe className="w-3 h-3 text-[#404040]" />
-                </div>
-
-                <div className="space-y-2 pointer-events-auto">
-                  {Object.entries(groupedSpots).map(([country, spots]) => (
-                    <div key={country} className="space-y-1">
-                      <button 
-                        onClick={() => toggleFolder(country)}
-                        className="w-full flex items-center justify-between p-3 rounded-2xl bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.06] transition-all cursor-pointer"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-2">
-                            <Folder className={cn("w-4 h-4 transition-all", expandedFolders.includes(country) ? "fill-white text-white" : "text-[#525252]")} />
-                            <span className="text-xs font-black uppercase tracking-widest truncate max-w-[120px]">{country}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); runOptimization(spots); }}
-                              disabled={isOptimizing}
-                              className="p-1.5 text-white/60 hover:text-white transition-all bg-white/10 rounded-lg active:scale-95"
-                            >
-                              <Route className="w-3.5 h-3.5" />
-                            </button>
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); deleteFolder(country, spots); }}
-                              className="p-1.5 text-red-500/60 hover:text-red-500 transition-all bg-white/10 rounded-lg active:scale-95"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                        <span className="text-[9px] font-black text-[#525252] bg-white/5 px-2 py-0.5 rounded-md">{spots.length}</span>
-                      </button>
-
-                      <AnimatePresence>
-                        {expandedFolders.includes(country) && (
-                          <motion.div 
-                            initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-                            className="overflow-hidden space-y-2 pl-4 py-2"
-                          >
-                            {spots.map((spot, i) => (
-                              <div 
-                                key={spot.id || i} 
-                                onClick={(e) => { 
-                                  e.stopPropagation(); 
-                                  if (spot.coordinates) (window as any).flyToSpot?.(...spot.coordinates);
-                                  if (isMobile) setSidebarVisible(false);
-                                }}
-                                className="group relative flex items-center gap-3 p-2.5 rounded-xl bg-white/[0.01] border border-transparent hover:border-white/10 hover:bg-white/[0.03] transition-all cursor-pointer"
-                              >
-                                <div className="w-8 h-8 rounded-lg overflow-hidden bg-black border border-white/5 flex-shrink-0">
-                                  {spot.thumbnail ? <img src={spot.thumbnail} className="w-full h-full object-cover grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all" /> : <MapPin className="w-full h-full p-2.5 text-[#262626]" />}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-[10px] font-bold truncate tracking-tight">{spot.name}</p>
-                                  <p className="text-[8px] text-[#525252] font-black uppercase truncate">{spot.city}</p>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <button 
-                                    onClick={(e) => { e.stopPropagation(); if (spot.id) toggleFavorite(spot.id, !!spot.is_favorite); }} 
-                                    className={cn("p-2 transition-all active:scale-125", spot.is_favorite ? "text-red-500" : "text-[#404040] hover:text-white")}
-                                  >
-                                    <Heart className={cn("w-4 h-4", spot.is_favorite && "fill-current")} />
-                                  </button>
-                                  <button 
-                                    onClick={(e) => { e.stopPropagation(); deleteSpot(spot.id, i); }} 
-                                    className="p-2 text-[#404040] hover:text-red-500 transition-all active:scale-95"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="h-10" />
-                <div className="px-4 mb-4">
-                  <p className="text-[10px] uppercase font-black tracking-[0.2em] text-[#404040] mb-4">Integrations</p>
-                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.05] flex flex-col gap-3">
-                    <div className="flex items-center gap-2 text-white/40 mb-1">
-                      <Share className="w-3 h-3" />
-                      <span className="text-[10px] font-black uppercase">Sync Shortcut</span>
-                    </div>
-                    {telegramId ? (
-                      <button 
-                        onClick={() => setShowShortcutInstructions(true)}
-                        className="w-full flex items-center justify-center gap-2 py-3 bg-white text-black rounded-xl text-[10px] font-black uppercase transition-all hover:scale-[1.02] active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.2)]"
-                      >
-                        Setup Shortcut
-                      </button>
+                    {isMenuOpen ? (
+                      <X className="w-7 h-7" />
                     ) : (
-                      <div className="space-y-3">
-                        <p className="text-[8px] text-[#737373] font-bold uppercase leading-tight italic">Link your Telegram first to unlock the iPhone Shortcut</p>
-                        {linkToken ? (
-                          <div className="flex flex-col gap-2">
-                            <div className="flex items-center justify-between bg-black rounded-lg p-2 border border-white/10">
-                              <code className="text-[10px] font-black text-white">{linkToken}</code>
-                              <button onClick={() => { navigator.clipboard.writeText(`/link ${linkToken}`); setCopied(true); setTimeout(() => setCopied(false), 2000); }} className="text-white/40 hover:text-white transition-all">
-                                {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <button onClick={generateLinkToken} className="w-full flex items-center justify-center gap-2 py-2 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl text-[9px] font-black uppercase transition-all">
-                            <Key className="w-3 h-3" /> Get Code
-                          </button>
-                        )}
-                      </div>
+                      <Plus className="w-7 h-7 stroke-[3px] group-hover:rotate-90 transition-transform" />
                     )}
-                  </div>
+                  </button>
                 </div>
-              </nav>
 
-              <div className="mt-6 px-2 space-y-2 pointer-events-auto">
-                 {routeGeometry ? (
-                   <button onClick={(e) => { e.stopPropagation(); setRouteGeometry(null); }} className="w-full bg-white text-black hover:bg-[#e5e5e5] py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-2xl active:scale-95 cursor-pointer pointer-events-auto">
-                     <X className="w-5 h-5" />
-                     <span className="text-[11px] font-black uppercase tracking-widest">Clear Journey</span>
-                   </button>
-                 ) : (
-                   <button onClick={(e) => { e.stopPropagation(); runOptimization(masterSpots); }} disabled={masterSpots.length < 2 || isOptimizing} className="w-full bg-white text-black hover:bg-[#e5e5e5] py-4 rounded-2xl flex items-center justify-center gap-3 transition-all disabled:opacity-20 shadow-2xl active:scale-95 cursor-pointer pointer-events-auto">
-                     <Route className={cn("w-5 h-5", isOptimizing && "animate-spin")} />
-                     <span className="text-[11px] font-black uppercase tracking-widest">{isOptimizing ? "Calculating..." : "Plan All Spots"}</span>
-                   </button>
-                 )}
-                 {user && (
-                   <button onClick={(e) => { e.stopPropagation(); fetchSpots(user.uid); }} className="w-full flex items-center justify-center gap-2 py-2 text-[#404040] hover:text-white transition-all text-[9px] font-black uppercase tracking-widest cursor-pointer pointer-events-auto">
-                     <RefreshCw className="w-3 h-3" /> Sync Firestore
-                   </button>
-                 )}
-              </div>
-
-              <div className="mt-8 border-t border-white/5 pt-6 flex items-center gap-3 px-2 mb-2 pointer-events-none">
-                <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10"><User className="w-5 h-5 text-[#737373]" /></div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold truncate text-white/80">{user ? user.email.split('@')[0] : "Guest Account"}</p>
-                  <p className={cn("text-[9px] uppercase tracking-tighter font-black transition-all", dbStatus.includes("Error") ? "text-red-500" : "text-[#525252]")}>{dbStatus}</p>
-                </div>
-                <div className={cn("w-2 h-2 rounded-full shadow-[0_0_10px]", user ? "bg-green-500 shadow-green-500/40" : "bg-orange-500 shadow-orange-500/40")} />
-              </div>
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* 5. MINIMIZED TRIGGER (Z-[150]) */}
-      <AnimatePresence>
-        {isBloomed && !sidebarVisible && (
-          <motion.button
-            initial={{ x: -100 }} animate={{ x: 0 }} exit={{ x: -100 }}
-            onClick={() => setSidebarVisible(true)}
-            className="fixed left-4 md:left-6 top-1/2 -translate-y-1/2 w-10 md:w-12 h-10 md:h-12 bg-black border border-white/10 rounded-2xl z-[150] flex items-center justify-center text-white shadow-2xl hover:scale-110 active:scale-95 transition-all cursor-pointer pointer-events-auto"
-          >
-            {isMobile ? <Menu className="w-5 h-5" /> : <ChevronRight className="w-6 h-6" />}
-          </motion.button>
-        )}
-      </AnimatePresence>
+                <button 
+                  onClick={() => { setSidebarVisible(true); setActiveFilter("favorites"); setIsMenuOpen(false); }}
+                  className={cn(
+                    "w-12 h-12 rounded-[24px] flex items-center justify-center transition-all",
+                    sidebarVisible && activeFilter === "favorites" ? "bg-white text-black" : "text-white/40 hover:text-white"
+                  )}
+                >
+                  <Heart className="w-5 h-5" />
+                </button>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* 6. MAIN CONTENT (Z-10) */}
       <div className={cn(
@@ -712,21 +1052,51 @@ export default function ZenDashboard() {
           </AnimatePresence>
 
           {/* SEARCH BAR */}
-          <div className={cn(
-            "w-full transition-all duration-1000 ease-in-out pointer-events-auto",
-            isBloomed && "fixed top-6 md:top-10 max-w-xl scale-90 md:scale-100"
-          )}>
-            <form onSubmit={handlePaste} className="w-full relative group">
-              <div className={cn("absolute -inset-[3px] bg-gradient-to-r from-white/0 via-white/30 to-white/0 rounded-[32px] blur-2xl opacity-0 transition-all duration-1000", isFocused && "opacity-100 scale-105")} />
-              <div className="relative bg-black/60 backdrop-blur-3xl border border-white/10 rounded-3xl md:rounded-[32px] flex items-center px-4 md:px-8 py-4 md:py-6 gap-3 md:gap-6 transition-all duration-500 hover:border-white/20 shadow-[0_50px_150px_rgba(0,0,0,1)]">
-                <Search className={cn("w-5 md:w-7 h-5 md:h-7 transition-all duration-700 hidden sm:block", isFocused ? "text-white rotate-180" : "text-[#404040]")} />
-                <input type="text" placeholder={isMobile ? "Paste link here..." : "Paste Instagram or TikTok link here..."} className="bg-transparent border-none outline-none flex-1 text-sm md:text-lg placeholder-[#404040] font-black tracking-tighter text-white" value={url} onChange={(e) => setUrl(e.target.value)} onFocus={() => setIsFocused(true)} onBlur={() => setIsFocused(false)} />
-                <button type="submit" className="bg-white text-black px-6 md:px-10 py-2.5 md:py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[11px] font-black hover:scale-105 transition-all active:scale-95 disabled:opacity-20 uppercase tracking-[0.2em] shadow-xl cursor-pointer" disabled={isAnalyzing}>
-                  {isAnalyzing ? "..." : isBloomed ? "Add" : "Launch"}
-                </button>
-              </div>
-            </form>
-          </div>
+          <AnimatePresence>
+            {!isBloomed && (
+              <motion.div 
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="w-full relative group pointer-events-auto"
+              >
+                <div className={cn("absolute -inset-[3px] bg-gradient-to-r from-white/0 via-white/30 to-white/0 rounded-[32px] blur-2xl opacity-0 transition-all duration-1000", isFocused && "opacity-100 scale-105")} />
+                <div className="relative bg-black/60 backdrop-blur-3xl border border-white/10 rounded-3xl md:rounded-[32px] flex items-center px-4 md:px-8 py-4 md:py-6 gap-3 md:gap-6 transition-all duration-500 hover:border-white/20 shadow-[0_50px_150px_rgba(0,0,0,1)]">
+                  {isSearching ? <Loader2 className="w-5 md:w-7 h-5 md:h-7 text-white animate-spin" /> : <Search className={cn("w-5 md:w-7 h-5 md:h-7 transition-all duration-700 hidden sm:block", isFocused ? "text-white rotate-180" : "text-[#404040]")} />}
+                  <input 
+                    type="text" placeholder={isMobile ? "Add link or search..." : "Paste Instagram/TikTok link or search a place..."} 
+                    className="bg-transparent border-none outline-none flex-1 text-sm md:text-lg placeholder-[#404040] font-black tracking-tighter text-white" 
+                    value={inputValue} onChange={(e) => setInputValue(e.target.value)} onFocus={() => setIsFocused(true)} onBlur={() => setTimeout(() => setIsFocused(false), 200)} 
+                  />
+                  <button onClick={handlePaste} className="bg-white text-black px-6 md:px-10 py-2.5 md:py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[11px] font-black hover:scale-105 transition-all active:scale-95 disabled:opacity-20 uppercase tracking-[0.2em] shadow-xl cursor-pointer" disabled={isAnalyzing}>
+                    {isAnalyzing ? "..." : "Launch"}
+                  </button>
+                </div>
+
+                {/* Suggestions Dropdown for Launch View */}
+                <AnimatePresence>
+                  {isFocused && suggestions.length > 0 && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
+                      className="absolute top-full left-0 right-0 mt-4 bg-[#0a0a0a] border border-white/10 rounded-[32px] overflow-hidden z-[200] shadow-2xl"
+                    >
+                      {suggestions.map((s: any, i: number) => (
+                        <button 
+                          key={i}
+                          onClick={() => handleSearchSelect(s)}
+                          className="w-full flex items-center justify-between p-6 text-left hover:bg-white/5 transition-colors border-b border-white/5 last:border-none group"
+                        >
+                          <div>
+                            <p className="text-lg font-black text-white group-hover:text-white transition-colors">{s.name}</p>
+                            <p className="text-[10px] text-[#525252] font-bold uppercase tracking-widest">{s.city}, {s.country}</p>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-white/10 group-hover:text-white transition-all group-hover:translate-x-1" />
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* 7. INTELLIGENCE DRAWER (Z-150) */}
@@ -763,7 +1133,17 @@ export default function ZenDashboard() {
                           </div>
                           <div className="flex-1 min-w-0 flex flex-col justify-center pointer-events-none">
                             <h4 className="text-lg md:text-xl font-black truncate tracking-tighter group-hover:text-white text-white">{spot.name}</h4>
-                            <div className="flex items-center gap-2 md:gap-3 mt-1"><p className="text-[10px] md:text-[11px] text-[#525252] font-black uppercase tracking-tighter">{spot.city}</p><span className="w-1 h-1 bg-white/10 rounded-full" /><p className="text-[10px] md:text-[11px] text-white/40 font-black uppercase tracking-tighter">{spot.category}</p></div>
+                            <div className="flex items-center gap-2 md:gap-3 mt-1">
+                              <span className="text-sm">{getCountryFlag(spot.country)}</span>
+                              <p className="text-[10px] md:text-[11px] text-[#525252] font-black uppercase tracking-tighter">{spot.city}</p>
+                              <span className="w-1 h-1 bg-white/10 rounded-full" />
+                              <p className="text-[10px] md:text-[11px] text-white/40 font-black uppercase tracking-tighter">{spot.category}</p>
+                            </div>
+                            {spot.description && (
+                              <p className="text-[10px] text-[#404040] mt-2 line-clamp-2 group-hover:text-white/40 transition-colors italic leading-relaxed">
+                                {spot.description}
+                              </p>
+                            )}
                           </div>
                         </motion.div>
                       ))}
