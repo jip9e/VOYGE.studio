@@ -82,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Location Extraction Pipeline
 
-- **Five-stage location extraction pipeline**: zero-compute text extractor → multi-API geocoder cascade → Wikipedia + Knowledge Graph verification → Google Vision landmark detection → GPT-4o tool-calling AI agent.
+- **Five-stage location extraction pipeline**: zero-compute text extractor → multi-API geocoder cascade → Wikipedia + Knowledge Graph verification → Google Vision landmark detection → GPT-5 tool-calling AI agent.
 - **Geocoder cascade** (Stage 2): Mapbox SearchBox → Mapbox Geocoding V5 → Nominatim (OpenStreetMap) → GeoNames → HERE → OpenCage → Overpass OSM. Seven services tried in priority order until a confidence threshold is reached.
 - **`SOURCE_CONFIDENCE_FLOORS`** table: per-signal-type confidence starting floors used in candidate scoring (native GPS, anchor location, pin emoji, creator reply, caption explicit, geo-hashtag, tagged account, bio-based, comment answer, music title).
 - **Two-layer result cache**: LRU in-memory cache for within-session performance + Firebase Firestore cache with a 7-day TTL for cross-session persistence, keyed by URL.
@@ -92,8 +92,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Intelligence & AI
 
 - **Link & Omni-Search**: paste any Instagram Reel or TikTok URL directly into the dashboard, or search for a place name using Mapbox SearchBox real-time autocomplete.
-- **AI Enhancement** (`ai.ts`): `enhanceSpotData()` automatically generates a description, category classification, and vibes string for every spot using GPT-4o via GitHub Models / Azure AI Inference.
-- **`extractSpotData()`**: structured JSON extraction of spot metadata (name, city, country, category, vibe, description) from raw scraper data using GPT-4o function calling.
+- **AI Enhancement** (`ai.ts`): `enhanceSpotData()` automatically generates a description, category classification, and vibes string for every spot using GPT-5 via GitHub Models / Azure AI Inference.
+- **`extractSpotData()`**: structured JSON extraction of spot metadata (name, city, country, category, vibe, description) from raw scraper data using GPT-5 function calling.
 
 #### Visual Content Engine
 
@@ -120,7 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Next.js 16 App Router** with Vercel Serverless Functions for all API routes.
 - **Firebase Firestore + Firebase Auth** for spot persistence and user authentication, scoped per authenticated user.
 - **Mapbox GL JS v3** with SearchBox API and Optimization API.
-- **GitHub Models (GPT-4o)** via `@azure-rest/ai-inference` for AI intelligence throughout the pipeline.
+- **GitHub Models (GPT-5)** via `@azure-rest/ai-inference` for AI intelligence throughout the pipeline.
 - **TypeScript 5.9** with strict mode across the entire codebase.
 - **Tailwind CSS v4** for utility-first styling.
 - **Framer Motion 12** for gesture-driven animations.

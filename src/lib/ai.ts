@@ -1,7 +1,7 @@
 /**
  * @fileoverview Legacy AI Extraction — `extractSpotData()` & `enhanceSpotData()`
  *
- * This module provides two GPT-4o-powered functions that handle the AI layer
+ * This module provides two GPT-5-powered functions that handle the AI layer
  * of the VOYGE location pipeline. Both functions call the
  * [GitHub Models](https://github.com/marketplace/models) endpoint via the
  * Azure AI Inference REST SDK, authenticated with `GITHUB_MODELS_TOKEN`.

@@ -36,7 +36,7 @@ You will also need accounts/tokens for at minimum:
 
 - **Mapbox** — [account.mapbox.com](https://account.mapbox.com/) — for map rendering and geocoding
 - **RapidAPI** — [rapidapi.com](https://rapidapi.com/) — subscribed to `instagram-scraper-api2` and `tiktok-scraper7`
-- **GitHub Models** — [github.com/marketplace/models](https://github.com/marketplace/models) — for the GPT-4o AI agent
+- **GitHub Models** — [github.com/marketplace/models](https://github.com/marketplace/models) — for the GPT-5 AI agent
 
 See [Section 3](#3-environment-variable-setup) for the full list of optional keys.
 
@@ -74,7 +74,7 @@ Then open `.env.local` in your editor. The table below documents every variable:
 |----------|-------------|----------------|
 | `NEXT_PUBLIC_MAPBOX_TOKEN` | Mapbox public token — map rendering, SearchBox autocomplete, geocoding, route optimization | [account.mapbox.com](https://account.mapbox.com/) |
 | `RAPIDAPI_KEY` | Single key for all RapidAPI-hosted scrapers (Instagram + TikTok) | [rapidapi.com](https://rapidapi.com/) |
-| `GITHUB_MODELS_TOKEN` | GitHub Models / Azure AI token — GPT-4o for Stage 5 agent and spot enhancement | [github.com/marketplace/models](https://github.com/marketplace/models) |
+| `GITHUB_MODELS_TOKEN` | GitHub Models / Azure AI token — GPT-5 for Stage 5 agent and spot enhancement | [github.com/marketplace/models](https://github.com/marketplace/models) |
 
 ### Optional — features degrade gracefully without these
 
@@ -171,7 +171,7 @@ VOYGE.studio/
 │   │   ├── globals.css               # Global styles + Tailwind base layer
 │   │   └── api/                      # Serverless API route handlers
 │   │       ├── analyze/route.ts      # POST — scrape URL + run 5-stage pipeline
-│   │       ├── enhance/route.ts      # POST — AI-enhance spot metadata via GPT-4o
+│   │       ├── enhance/route.ts      # POST — AI-enhance spot metadata via GPT-5
 │   │       ├── search/route.ts       # GET  — Mapbox SearchBox autocomplete proxy
 │   │       ├── optimize/route.ts     # POST — Mapbox TSP route optimization
 │   │       ├── images/route.ts       # GET  — Pexels image search for a place name
@@ -190,7 +190,7 @@ VOYGE.studio/
 │       ├── scrapers.ts               # Instagram + TikTok multi-layer scrapers,
 │       │                             #   creator comment extraction, anchor locs
 │       ├── ai.ts                     # extractSpotData() + enhanceSpotData()
-│       │                             #   (GPT-4o, 25s / 12s timeouts)
+│       │                             #   (GPT-5, 25s / 12s timeouts)
 │       ├── geo.ts                    # Legacy geocoding shim
 │       ├── firebase.ts               # Firebase app init, Auth, Firestore
 │       ├── optimize.ts               # Mapbox Optimization API wrapper
@@ -204,7 +204,7 @@ VOYGE.studio/
 │           ├── geocoder.ts           # Stage 2: 7-service geocoding cascade
 │           ├── verifier.ts           # Stage 3: Wikipedia + Knowledge Graph
 │           ├── vision.ts             # Stage 4: Google Vision landmark detection
-│           └── ai-agent.ts           # Stage 5: GPT-4o tool-calling agent
+│           └── ai-agent.ts           # Stage 5: GPT-5 tool-calling agent
 │
 ├── scripts/
 │   └── diagnose-tiktok.mjs           # CLI tool — raw scraper response dump
@@ -248,7 +248,7 @@ URL
              ├─► Stage 2: geocoder.ts      — 7-service geocoding cascade
              ├─► Stage 3: verifier.ts      — Wikipedia + KG verification
              ├─► Stage 4: vision.ts        — Google Vision landmark detection
-             └─► Stage 5: ai-agent.ts      — GPT-4o tool-calling fallback
+             └─► Stage 5: ai-agent.ts      — GPT-5 tool-calling fallback
 ```
 
 ### Key constants in `pipeline.ts`

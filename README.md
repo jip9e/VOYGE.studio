@@ -27,7 +27,7 @@
 
 ## 🧭 What is VOYGE.studio?
 
-VOYGE.studio is a **travel intelligence platform** that bridges the gap between digital inspiration and real-world exploration. We all accumulate hundreds of bookmarked Reels and TikToks of hidden cafés, breathtaking viewpoints, and secret beaches — yet when it's actually time to travel, those saves stay buried in an endless scroll. VOYGE solves this by automatically extracting the real-world GPS location from any Instagram Reel or TikTok video using a proprietary **5-stage location extraction pipeline** — pulling signals from captions, hashtags, creator comments, anchor stickers, bios, thumbnails, and a final GPT-4o AI agent — then pinning each spot to an interactive 3D globe. From there, a mathematical route optimization engine based on the Travelling Salesman Problem eliminates zigzagging and turns your scattered saves into a logical, day-by-day itinerary. **No manual tagging. No copy-pasting addresses. Just paste a link.**
+VOYGE.studio is a **travel intelligence platform** that bridges the gap between digital inspiration and real-world exploration. We all accumulate hundreds of bookmarked Reels and TikToks of hidden cafés, breathtaking viewpoints, and secret beaches — yet when it's actually time to travel, those saves stay buried in an endless scroll. VOYGE solves this by automatically extracting the real-world GPS location from any Instagram Reel or TikTok video using a proprietary **5-stage location extraction pipeline** — pulling signals from captions, hashtags, creator comments, anchor stickers, bios, thumbnails, and a final GPT-5 AI agent — then pinning each spot to an interactive 3D globe. From there, a mathematical route optimization engine based on the Travelling Salesman Problem eliminates zigzagging and turns your scattered saves into a logical, day-by-day itinerary. **No manual tagging. No copy-pasting addresses. Just paste a link.**
 
 ---
 
@@ -44,7 +44,7 @@ VOYGE.studio is a **travel intelligence platform** that bridges the gap between 
 - **Stage 2 — Multi-API geocoding cascade:** tries up to 7 geocoding services (Mapbox → Nominatim → GeoNames → HERE → OpenCage → Overpass OSM) with confidence scoring per source
 - **Stage 3 — Knowledge verification:** cross-references geocoded results against Wikipedia REST API and Google Knowledge Graph to weed out false positives
 - **Stage 4 — Visual landmark detection:** runs Google Cloud Vision on the video thumbnail to detect famous landmarks directly from the image
-- **Stage 5 — AI tool-calling agent:** GPT-4o agent with access to geocoding tools as a final authoritative fallback, with a 45-second deadline to prevent serverless timeouts
+- **Stage 5 — AI tool-calling agent:** GPT-5 agent with access to geocoding tools as a final authoritative fallback, with a 45-second deadline to prevent serverless timeouts
 
 ### 🗺️ Interactive 3D Globe
 - **Mapbox GL JS v3** globe renderer with three switchable map styles: **Dark**, **Satellite**, and **Outdoors**
@@ -57,7 +57,7 @@ VOYGE.studio is a **travel intelligence platform** that bridges the gap between 
 - All spots stored in **Firebase Firestore**, scoped per authenticated user
 - **Country emoji flags** (🇲🇦 🇮🇹 🇯🇵) with deep grouping by Country > City/Region
 - **Category filtering** — Attractions, Museums, Food & Drink, Nature, Nightlife, and more
-- **AI-enhanced metadata** — auto-generated descriptions, vibes, and category tags via GPT-4o
+- **AI-enhanced metadata** — auto-generated descriptions, vibes, and category tags via GPT-5
 - **Pexels hero images** automatically fetched for every saved location
 - Confidence score and source chain stored per spot for transparency
 
@@ -99,7 +99,7 @@ VOYGE.studio is a **travel intelligence platform** that bridges the gap between 
 │                 │                       │                       │
 │  Instagram:     │                       │  extractSpotData()    │
 │  · api2 v1      │                       │  enhanceSpotData()    │
-│  · api2 v1.1    │                       │  (GPT-4o, 25s / 12s) │
+│  · api2 v1.1    │                       │  (GPT-5, 25s / 12s) │
 │  · instagram120 │                       └───────────────────────┘
 │  · oEmbed       │
 │                 │
@@ -116,7 +116,7 @@ VOYGE.studio is a **travel intelligence platform** that bridges the gap between 
 │  Stage 2  geocoder.ts    7-service geocoding cascade             │
 │  Stage 3  verifier.ts    Wikipedia + Knowledge Graph check       │
 │  Stage 4  vision.ts      Google Vision landmark detection        │
-│  Stage 5  ai-agent.ts    GPT-4o tool-calling agent               │
+│  Stage 5  ai-agent.ts    GPT-5 tool-calling agent               │
 │                                                                  │
 │  + LRU in-memory cache  +  Firestore cache (7-day TTL)          │
 └──────────────────────────────────────────────────────────────────┘
@@ -215,10 +215,10 @@ Social Media URL
                                │ (override if high-confidence)
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  STAGE 5 · ai-agent.ts · GPT-4o Tool-Calling Agent              │
+│  STAGE 5 · ai-agent.ts · GPT-5 Tool-Calling Agent              │
 │  (invoked only if best pipeline result < AI_AGENT_THRESHOLD)    │
 │                                                                  │
-│  GitHub Models / Azure AI GPT-4o agent with tool access:        │
+│  GitHub Models / Azure AI GPT-5 agent with tool access:        │
 │  · geocode_place(query, countryHint)                            │
 │  · verify_place(placeName, lat, lng)                            │
 │  · search_knowledge_graph(query)                                │
@@ -254,7 +254,7 @@ Social Media URL
 | **Geocoding (Fallbacks)** | Nominatim, GeoNames, HERE, OpenCage, Overpass | — | 7-service cascade fallback chain |
 | **Scraping — Instagram** | RapidAPI `instagram-scraper-api2` + `instagram120` | — | Caption, hashtag, comments, bio, thumbnail |
 | **Scraping — TikTok** | `tikwm` (primary) + RapidAPI `tiktok-scraper7` | — | Multi-layer TikTok data extraction |
-| **AI Agent** | GitHub Models / Azure AI Inference (GPT-4o) | — | Stage 5 extraction + metadata enhancement |
+| **AI Agent** | GitHub Models / Azure AI Inference (GPT-5) | — | Stage 5 extraction + metadata enhancement |
 | **Vision** | Google Cloud Vision API | — | Landmark detection on video thumbnails |
 | **Verification** | Wikipedia REST API + Google Knowledge Graph | — | Confidence scoring for place names |
 | **Images** | Pexels API | — | Hero images for saved spots |
@@ -328,7 +328,7 @@ Copy `.env.example` to `.env.local` and fill in the values below. The file is li
 |---|---|---|
 | `NEXT_PUBLIC_MAPBOX_TOKEN` | Mapbox public token — map rendering, geocoding, SearchBox, route optimization | [account.mapbox.com](https://account.mapbox.com/) |
 | `RAPIDAPI_KEY` | Single key used for all RapidAPI-hosted scrapers (Instagram + TikTok) | [rapidapi.com](https://rapidapi.com/) |
-| `GITHUB_MODELS_TOKEN` | GitHub Models / Azure AI token for GPT-4o (Stage 5 agent + spot enhancement) | [github.com/marketplace/models](https://github.com/marketplace/models) |
+| `GITHUB_MODELS_TOKEN` | GitHub Models / Azure AI token for GPT-5 (Stage 5 agent + spot enhancement) | [github.com/marketplace/models](https://github.com/marketplace/models) |
 
 ### Optional — features degrade gracefully when absent
 
@@ -361,7 +361,7 @@ VOYGE.studio/
 │   │   ├── globals.css               # Global styles + Tailwind base layer
 │   │   └── api/
 │   │       ├── analyze/route.ts      # POST  — scrape URL + run 5-stage pipeline
-│   │       ├── enhance/route.ts      # POST  — AI-enhance spot metadata via GPT-4o
+│   │       ├── enhance/route.ts      # POST  — AI-enhance spot metadata via GPT-5
 │   │       ├── search/route.ts       # GET   — Mapbox place search suggestions
 │   │       ├── optimize/route.ts     # POST  — Mapbox route optimization (TSP)
 │   │       ├── images/route.ts       # GET   — Pexels image search for a place
@@ -373,7 +373,7 @@ VOYGE.studio/
 │   └── lib/
 │       ├── engine.ts                 # Main orchestrator: scrape → extract → geocode
 │       ├── scrapers.ts               # Instagram + TikTok scrapers (multi-layer)
-│       ├── ai.ts                     # GPT-4o extraction + spot enhancement helpers
+│       ├── ai.ts                     # GPT-5 extraction + spot enhancement helpers
 │       ├── geo.ts                    # Legacy geocoding shim
 │       ├── firebase.ts               # Firebase app + Firestore/Auth config
 │       ├── optimize.ts               # Route optimization wrapper
@@ -386,7 +386,7 @@ VOYGE.studio/
 │           ├── geocoder.ts           # Stage 2: 7-service geocoding cascade
 │           ├── verifier.ts           # Stage 3: Wikipedia + Knowledge Graph verification
 │           ├── vision.ts             # Stage 4: Google Cloud Vision landmark detection
-│           └── ai-agent.ts           # Stage 5: GPT-4o tool-calling agent
+│           └── ai-agent.ts           # Stage 5: GPT-5 tool-calling agent
 ├── scripts/
 │   └── diagnose-tiktok.mjs           # CLI diagnostic tool for TikTok scraper debugging
 ├── public/
@@ -443,7 +443,7 @@ Scrapes a social media URL and runs the full 5-stage location extraction pipelin
 
 ### `POST /api/enhance`
 
-Uses GPT-4o to generate a description, category, and vibes string for a given spot name.
+Uses GPT-5 to generate a description, category, and vibes string for a given spot name.
 
 **Request:**
 ```json

@@ -2,7 +2,7 @@
  * @fileoverview POST /api/enhance — Travel Spot Enrichment
  *
  * Accepts a known place name + city (and optional country), calls
- * `enhanceSpotData()` to generate structured travel metadata via GPT-4o,
+ * `enhanceSpotData()` to generate structured travel metadata via GPT-5,
  * then fetches a representative photo from the Pexels API.
  *
  * ## Request
@@ -45,7 +45,7 @@
  *
  * ## Internals
  *
- * 1. Calls `enhanceSpotData(name, city, country)` — a GPT-4o request with a
+ * 1. Calls `enhanceSpotData(name, city, country)` — a GPT-5 request with a
  *    12-second timeout. Returns safe defaults on failure.
  * 2. If `PEXELS_API_KEY` is set, searches Pexels for `"<name> <city>"` and
  *    returns the `large` variant of the first result as `thumbnail`.
@@ -53,7 +53,7 @@
  * ## Environment Variables
  *
  * - `PEXELS_API_KEY`       — Optional. Pexels REST API key for photo lookup.
- * - `GITHUB_MODELS_TOKEN`  — Required by `enhanceSpotData()` for GPT-4o.
+ * - `GITHUB_MODELS_TOKEN`  — Required by `enhanceSpotData()` for GPT-5.
  *
  * @module api/enhance
  */

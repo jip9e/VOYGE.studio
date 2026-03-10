@@ -64,7 +64,7 @@
  * 1. Firestore cache check (returns immediately on HIT)
  * 2. Platform scraping (Instagram 4-layer / TikTok tikwm + scraper7)
  * 3. 5-stage location pipeline (extractor → geocoder → verifier → vision → AI agent)
- * 4. Legacy GPT-4o extraction (fallback if pipeline returns null)
+ * 4. Legacy GPT-5 extraction (fallback if pipeline returns null)
  * 5. Firestore cache write
  *
  * @see {@link processPost} for full pipeline documentation
