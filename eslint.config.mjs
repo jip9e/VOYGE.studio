@@ -1,3 +1,4 @@
+// ESLint config — extends next/core-web-vitals (performance + accessibility rules) and next/typescript.
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
