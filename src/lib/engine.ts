@@ -485,6 +485,45 @@ export async function processPost(url: string): Promise<EngineResult> {
     `[Engine] Pipeline returned null — falling back to legacy AI extraction…`,
   );
 
+  // WEAK SIGNAL CHECK (Instagram only):
+  // If we have very little data, don't waste 25s waiting for AI to timeout.
+  if (platform === "instagram") {
+    const hasLocation = !!richData.location_name;
+    const hasComments = richData.top_comments.length > 0;
+    const hasBio = richData.user_bio.length > 5;
+    const hasHashtags = richData.hashtags.length > 0;
+    const captionLen = richData.caption.length;
+
+    // If no explicit location, no comments, and short caption/no bio, it's hopeless.
+    const isWeak =
+      !hasLocation &&
+      !hasComments &&
+      (!hasBio || richData.user_bio.length < 10) &&
+      captionLen < 50 &&
+      !hasHashtags;
+
+    if (isWeak) {
+      console.warn(
+        `[Engine] Weak signals detected for Instagram post — skipping legacy AI to avoid timeout.`,
+      );
+      return {
+        travel_spots: [],
+        thumbnail: richData.thumbnail,
+        original_link: url,
+        platform,
+        post_id: postId,
+        rich_data: {
+          location_name: richData.location_name,
+          hashtags: richData.hashtags,
+          top_comments: richData.top_comments,
+          user_bio: richData.user_bio,
+          author_username: richData.author_username,
+        },
+        cached: false,
+      };
+    }
+  }
+
   let extraction: { travel_spots?: unknown[] } | null = null;
   try {
     extraction = (await extractSpotData(richData)) as {
@@ -492,6 +531,33 @@ export async function processPost(url: string): Promise<EngineResult> {
     };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
+    const isInstagram = platform === "instagram";
+    const isTimeout = /timeout/i.test(msg) || /AI extraction failed/i.test(msg);
+
+    // Instagram-only hardening:
+    // If legacy AI fallback times out/fails on weak IG signals, return a safe
+    // partial result instead of throwing a 500.
+    if (isInstagram && isTimeout) {
+      console.warn(
+        `[Engine] Instagram legacy AI fallback timed out/failed — returning partial empty result. reason="${msg}"`,
+      );
+      return {
+        travel_spots: [],
+        thumbnail: richData.thumbnail,
+        original_link: url,
+        platform,
+        post_id: postId,
+        rich_data: {
+          location_name: richData.location_name,
+          hashtags: richData.hashtags,
+          top_comments: richData.top_comments,
+          user_bio: richData.user_bio,
+          author_username: richData.author_username,
+        },
+        cached: false,
+      };
+    }
+
     throw new Error(`AI extraction failed: ${msg}`);
   }
 

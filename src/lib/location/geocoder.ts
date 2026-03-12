@@ -505,6 +505,56 @@ async function geocodeNominatim(
   }
 }
 
+// ─── Geocoder 4.5: Photon (Komoot / OSM) ────────────────────────────────────
+
+async function geocodePhoton(
+  ctx: GeocoderContext,
+): Promise<GeocoderResult | null> {
+  try {
+    const params = new URLSearchParams({
+      q: ctx.countryHint
+        ? `${ctx.placeName}, ${ctx.countryHint}`
+        : ctx.placeName,
+      limit: "1",
+      lang: "en",
+    });
+
+    const url = `https://photon.komoot.io/api/?${params}`;
+    const res = await fetchWithTimeout(url, { timeoutMs: 6000 });
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as { features?: any[] };
+    if (!data.features || data.features.length === 0) return null;
+
+    const best = data.features[0];
+    const [lon, lat] = best.geometry.coordinates;
+    const props = best.properties || {};
+
+    const country = props.country || "Unknown";
+    const city =
+      props.city || props.town || props.village || props.name || ctx.placeName;
+    const full_address = `${props.name}, ${city}, ${country}`;
+
+    console.log(
+      `[Geocoder] Photon: "${props.name}" [${lat.toFixed(4)}, ${lon.toFixed(4)}]`,
+    );
+
+    return {
+      coordinates: [lon, lat],
+      full_address,
+      country,
+      city,
+      mapbox_id: null,
+      confidence: 0.81,
+      source: "photon",
+    };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn("[Geocoder] Photon failed:", msg);
+    return null;
+  }
+}
+
 // ─── Geocoder 5: GeoNames (natural features) ─────────────────────────────────
 
 async function geocodeGeoNames(
@@ -857,54 +907,82 @@ export async function geocodePlace(
   const ctx: GeocoderContext = { placeName, countryHint, regionHint };
   const CONFIDENCE_THRESHOLD = 0.85;
 
-  // ── Determine geocoder order ───────────────────────────────────────────────
-  // For natural features: try Overpass + GeoNames early since Mapbox often
-  // misses rivers / waterfalls.
-  const geocoders: Array<() => Promise<GeocoderResult | null>> =
-    isNaturalFeature
-      ? [
-          () => geocodeOverpass(ctx),
-          () => geocodeGeoNames(ctx),
-          () => geocodeMapboxSearchBox(ctx),
-          () => geocodeMapboxV5(ctx),
-          () => geocodeNominatim(ctx),
-          () => geocodeHERE(ctx),
-          () => geocodeOpenCage(ctx),
-        ]
-      : [
-          () => geocodeMapboxSearchBox(ctx),
-          () => geocodeMapboxV5(ctx),
-          () => geocodeNominatim(ctx),
-          () => geocodeGeoNames(ctx),
-          () => geocodeHERE(ctx),
-          () => geocodeOpenCage(ctx),
-          () => geocodeOverpass(ctx),
-        ];
+  // ── Consensus Strategy for Free Geocoders ──────────────────────────────────
+  // Run multiple free providers in parallel to find agreement.
+  // This massively improves robustness for Instagram where context is weak.
+
+  const tasks: Promise<GeocoderResult | null>[] = [
+    geocodeNominatim(ctx),
+    geocodePhoton(ctx),
+    geocodeGeoNames(ctx),
+  ];
+
+  if (isNaturalFeature) {
+    tasks.push(geocodeOverpass(ctx));
+  }
+
+  if (MAPBOX_TOKEN) {
+    tasks.push(geocodeMapboxSearchBox(ctx));
+  }
+
+  console.log(`[Geocoder] Running ${tasks.length} providers in parallel…`);
+
+  const results = (await Promise.allSettled(tasks))
+    .filter(
+      (r): r is PromiseFulfilledResult<GeocoderResult | null> =>
+        r.status === "fulfilled",
+    )
+    .map((r) => r.value)
+    .filter((r): r is GeocoderResult => r !== null);
+
+  // Helper: Haversine distance in km
+  const distKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
 
   let best: GeocoderResult | null = null;
+  let maxScore = -1;
 
-  for (const geocoder of geocoders) {
-    let result: GeocoderResult | null = null;
-    try {
-      result = await geocoder();
-    } catch {
-      // individual errors already logged inside each geocoder
-      continue;
-    }
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    let score = r.confidence;
+    let agreementCount = 0;
 
-    if (!result) continue;
-
-    // Keep the highest-confidence result seen so far
-    if (!best || result.confidence > best.confidence) {
-      best = result;
-    }
-
-    // Early exit if we have a high-confidence result
-    if (best.confidence >= CONFIDENCE_THRESHOLD) {
-      console.log(
-        `[Geocoder] ✅ Hit confidence threshold (${best.confidence.toFixed(2)}) via ${best.source} — stopping cascade`,
+    // Check consensus with other results (within 40km)
+    for (let j = 0; j < results.length; j++) {
+      if (i === j) continue;
+      const other = results[j];
+      const d = distKm(
+        r.coordinates[1],
+        r.coordinates[0],
+        other.coordinates[1],
+        other.coordinates[0],
       );
-      break;
+      if (d < 40) {
+        agreementCount++;
+        score += 0.12; // Boost confidence
+      }
+    }
+
+    if (agreementCount > 0) {
+      console.log(
+        `[Geocoder] Consensus: "${r.full_address}" (${r.source}) agreed by ${agreementCount} others. Boosted conf: ${score.toFixed(2)}`,
+      );
+    }
+
+    if (score > maxScore) {
+      maxScore = score;
+      best = { ...r, confidence: Math.min(0.99, score) };
     }
   }
 

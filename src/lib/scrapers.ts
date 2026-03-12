@@ -792,8 +792,12 @@ function sleep(ms: number) {
 
 export async function scrapeInstagram(url: string): Promise<RichPostData> {
   const rapidKey = process.env.RAPIDAPI_KEY;
+  // We allow proceeding without RAPIDAPI_KEY for free-tier scraping,
+  // but warn if it's missing since quality will be lower.
   if (!rapidKey)
-    throw new Error("RAPIDAPI_KEY environment variable is missing.");
+    console.warn(
+      "RAPIDAPI_KEY is missing — falling back to free oEmbed/HTML scraping.",
+    );
 
   // ── Normalise URL & extract shortcode ─────────────────────────────────────
   const cleanUrl = url.trim().startsWith("http")
@@ -821,91 +825,112 @@ export async function scrapeInstagram(url: string): Promise<RichPostData> {
   let _creatorComments: string[] = [];
   let _anchorLocations: string[] = [];
 
-  // ── Layer 1: instagram-scraper-api2 /v1/post_info (primary, richer data) ──
-  // This is the most reliable source for caption, thumbnail, location tag, author.
+  // ── Layer 0: Free oEmbed (Baseline) ──────────────────────────────────────
+  // We try this FIRST so we have at least some data if paid APIs fail/timeout.
   try {
-    console.log("[IG L1] Trying instagram-scraper-api2 /v1/post_info…");
-    const res = await axios.get(
-      "https://instagram-scraper-api2.p.rapidapi.com/v1/post_info",
-      {
-        params: { code_or_id_or_url: shortcode || canonicalUrl },
-        headers: {
-          "x-rapidapi-key": rapidKey,
-          "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
-        },
-        timeout: 15000,
-      },
-    );
+    console.log("[IG L0] Fetching oEmbed baseline…");
+    const oembedUrl = `https://api.instagram.com/oembed/?url=${encodeURIComponent(canonicalUrl)}&maxwidth=640`;
+    const res = await axios.get(oembedUrl, { timeout: 5000 });
 
-    const d = res.data?.data || res.data;
-    if (d) {
-      const rawCaption =
-        d?.caption?.text ||
-        d?.caption_text ||
-        d?.edge_media_to_caption?.edges?.[0]?.node?.text ||
-        d?.caption ||
-        "";
-      if (rawCaption) caption = rawCaption;
-
-      // Thumbnail — cascade through multiple keys
-      const imgs =
-        d?.image_versions2?.candidates ||
-        d?.thumbnail_resources ||
-        d?.carousel_media?.[0]?.image_versions2?.candidates ||
-        [];
-      if (imgs.length > 0) thumbnail = imgs[0]?.url || null;
-      if (!thumbnail)
-        thumbnail =
-          d?.display_url || d?.thumbnail_url || d?.cover_frame_url || null;
-
-      // Native Instagram location tag — the gold standard
-      if (d?.location) {
-        location_name =
-          d.location?.name ||
-          d.location?.short_name ||
-          d.location?.address_json?.city_name ||
-          null;
-        location_lat = d.location?.lat ?? null;
-        location_lng = d.location?.lng ?? null;
-        if (location_name) {
-          console.log(`[IG L1] 📍 Native location tag: "${location_name}"`);
-          _anchorLocations.push(location_name);
-        }
-      }
-
-      // Author
-      author_username =
-        d?.user?.username || d?.owner?.username || d?.account?.username || "";
-
-      // Hashtags
-      const captionHashtags = extractHashtagsFromText(rawCaption);
-      hashtags = [...new Set([...captionHashtags])];
-      if (Array.isArray(d?.hashtags)) {
-        hashtags = [
-          ...new Set([
-            ...hashtags,
-            ...d.hashtags.map((h: any) =>
-              typeof h === "string" ? h : h?.name || "",
-            ),
-          ]),
-        ].filter(Boolean);
-      }
-
+    if (res.data) {
+      caption = res.data.title || "";
+      thumbnail = res.data.thumbnail_url || null;
+      author_username = res.data.author_name || "";
       console.log(
-        `[IG L1] instagram-scraper-api2 v1 ✅ | location: ${location_name || "none"} | author: @${author_username} | hashtags: ${hashtags.length} | caption: ${caption.length} chars`,
+        `[IG L0] oEmbed ✅ | caption: ${caption.length} chars | author: ${author_username}`,
       );
-    } else {
-      console.warn(`[IG L1] instagram-scraper-api2 v1: no data in response`);
     }
   } catch (e: any) {
-    console.warn("[IG L1] instagram-scraper-api2 v1 failed:", e.message);
+    console.warn("[IG L0] oEmbed failed:", e.message);
+  }
+
+  // ── Layer 1: instagram-scraper-api2 /v1/post_info (primary, richer data) ──
+  // This is the most reliable source for caption, thumbnail, location tag, author.
+  if (rapidKey) {
+    try {
+      console.log("[IG L1] Trying instagram-scraper-api2 /v1/post_info…");
+      const res = await axios.get(
+        "https://instagram-scraper-api2.p.rapidapi.com/v1/post_info",
+        {
+          params: { code_or_id_or_url: shortcode || canonicalUrl },
+          headers: {
+            "x-rapidapi-key": rapidKey,
+            "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
+          },
+          timeout: 15000,
+        },
+      );
+
+      const d = res.data?.data || res.data;
+      if (d) {
+        const rawCaption =
+          d?.caption?.text ||
+          d?.caption_text ||
+          d?.edge_media_to_caption?.edges?.[0]?.node?.text ||
+          d?.caption ||
+          "";
+        if (rawCaption) caption = rawCaption;
+
+        // Thumbnail — cascade through multiple keys
+        const imgs =
+          d?.image_versions2?.candidates ||
+          d?.thumbnail_resources ||
+          d?.carousel_media?.[0]?.image_versions2?.candidates ||
+          [];
+        if (imgs.length > 0) thumbnail = imgs[0]?.url || null;
+        if (!thumbnail)
+          thumbnail =
+            d?.display_url || d?.thumbnail_url || d?.cover_frame_url || null;
+
+        // Native Instagram location tag — the gold standard
+        if (d?.location) {
+          location_name =
+            d.location?.name ||
+            d.location?.short_name ||
+            d.location?.address_json?.city_name ||
+            null;
+          location_lat = d.location?.lat ?? null;
+          location_lng = d.location?.lng ?? null;
+          if (location_name) {
+            console.log(`[IG L1] 📍 Native location tag: "${location_name}"`);
+            _anchorLocations.push(location_name);
+          }
+        }
+
+        // Author
+        author_username =
+          d?.user?.username || d?.owner?.username || d?.account?.username || "";
+
+        // Hashtags
+        const captionHashtags = extractHashtagsFromText(rawCaption);
+        hashtags = [...new Set([...captionHashtags])];
+        if (Array.isArray(d?.hashtags)) {
+          hashtags = [
+            ...new Set([
+              ...hashtags,
+              ...d.hashtags.map((h: any) =>
+                typeof h === "string" ? h : h?.name || "",
+              ),
+            ]),
+          ].filter(Boolean);
+        }
+
+        console.log(
+          `[IG L1] instagram-scraper-api2 v1 ✅ | location: ${location_name || "none"} | author: @${author_username} | hashtags: ${hashtags.length} | caption: ${caption.length} chars`,
+        );
+      } else {
+        console.warn(`[IG L1] instagram-scraper-api2 v1: no data in response`);
+      }
+    } catch (e: any) {
+      console.warn("[IG L1] instagram-scraper-api2 v1 failed:", e.message);
+    }
   }
 
   await sleep(300);
 
   // ── Layer 1.5: instagram-scraper-api2 /v1.1/post_info (alternate version) ──
   // Try the v1.1 endpoint as a supplement — may return richer nested fields.
-  if (!caption || !author_username) {
+  if (rapidKey && (!caption || !author_username)) {
     try {
       console.log("[IG L1.5] Trying instagram-scraper-api2 /v1.1/post_info…");
       const res = await axios.get(
@@ -974,13 +999,13 @@ export async function scrapeInstagram(url: string): Promise<RichPostData> {
     } catch (e: any) {
       console.warn("[IG L1.5] instagram-scraper-api2 v1.1 failed:", e.message);
     }
-
-    await sleep(300);
   }
 
-  // ── Layer 1b: instagram120 (free fallback — no key quota pressure) ────────
+  await sleep(300);
+
+  // ── Layer 1b: instagram120 (RapidAPI fallback) ──────────────────────────
   // Only use if we still have no caption or thumbnail.
-  if (!caption || !thumbnail) {
+  if (rapidKey && (!caption || !thumbnail)) {
     try {
       console.log("[IG L1b] Falling back to instagram120…");
       const res = await axios.post(
@@ -1016,33 +1041,66 @@ export async function scrapeInstagram(url: string): Promise<RichPostData> {
     } catch (e: any) {
       console.warn("[IG L1b] instagram120 failed:", e.message);
     }
-
-    await sleep(300);
   }
 
-  // ── Layer 1c: Instagram oEmbed (completely free, no key) ─────────────────
-  // Last resort for caption + thumbnail if everything above failed.
+  await sleep(300);
+
+  // ── Layer 1c: HTML Meta Tags (Last Resort) ──────────────────────────────
+  // If still no data, try to fetch the page HTML and regex for OG tags.
   if (!caption && !thumbnail) {
     try {
-      console.log("[IG L1c] Falling back to Instagram oEmbed…");
-      const res = await axios.get(
-        `https://api.instagram.com/oembed/?url=${encodeURIComponent(canonicalUrl)}&maxwidth=640`,
-        { timeout: 10000 },
-      );
-      if (res.data) {
-        caption = res.data.title || res.data.media_id || "";
-        thumbnail = res.data.thumbnail_url || null;
-        author_username =
-          res.data.author_name?.replace("@", "") || author_username;
+      console.log("[IG L1c] Fetching public HTML for meta tags…");
+      // Use a common browser UA to reduce block chance
+      const res = await axios.get(canonicalUrl, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        },
+        timeout: 8000,
+        validateStatus: () => true, // Don't throw on 404/429 so we can log
+      });
+
+      if (res.status === 200) {
+        const html = res.data as string;
+
+        // Extract Description
+        const descMatch =
+          html.match(
+            /<meta\s+property="og:description"\s+content="([^"]+)"/i,
+          ) || html.match(/<meta\s+name="description"\s+content="([^"]+)"/i);
+        if (descMatch) {
+          const rawDesc = descMatch[1];
+          // Instagram descriptions often start with "123 Likes, 4 Comments - Username (@handle) on Instagram: "
+          // We try to clean that prefix.
+          caption = rawDesc
+            .replace(/^.*?on Instagram:\s+["“](.*?)["”].*$/, "$1")
+            .trim();
+          if (!caption) caption = rawDesc;
+        }
+
+        // Extract Image
+        const imgMatch = html.match(
+          /<meta\s+property="og:image"\s+content="([^"]+)"/i,
+        );
+        if (imgMatch) thumbnail = imgMatch[1];
+
+        // Extract Title for Author
+        const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+        if (titleMatch) {
+          // "User (@handle) • Instagram photos and videos"
+          const handleMatch = titleMatch[1].match(/\(@([^)]+)\)/);
+          if (handleMatch) author_username = handleMatch[1];
+        }
+
         console.log(
-          `[IG L1c] oEmbed ✅ | caption: ${caption.length} chars | thumb: ${thumbnail ? "yes" : "no"}`,
+          `[IG L1c] HTML Parse ✅ | caption: ${caption.length} chars | author: ${author_username}`,
         );
       }
     } catch (e: any) {
-      console.warn("[IG L1c] oEmbed failed:", e.message);
+      console.warn("[IG L1c] HTML meta parse failed:", e.message);
     }
-
-    await sleep(300);
   }
 
   // Ensure hashtags are extracted from whatever caption we have so far
@@ -1052,88 +1110,90 @@ export async function scrapeInstagram(url: string): Promise<RichPostData> {
   // ── Layer 2: Comments (instagram-scraper-api2 /v1.1/comments) ────────────
   // Fetch up to 30 comments, then apply the same smart-filtering TikTok uses.
   let rawCommentItems: any[] = [];
-  try {
-    console.log("[IG L2] Fetching comments via instagram-scraper-api2…");
-    const res = await axios.get(
-      "https://instagram-scraper-api2.p.rapidapi.com/v1.1/comments",
-      {
-        params: { code_or_id_or_url: shortcode || canonicalUrl },
-        headers: {
-          "x-rapidapi-key": rapidKey,
-          "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
-        },
-        timeout: 15000,
-      },
-    );
-
-    rawCommentItems =
-      res.data?.data?.items ||
-      res.data?.items ||
-      res.data?.data?.comments ||
-      res.data?.comments ||
-      [];
-
-    console.log(
-      `[IG L2] raw comment items: ${Array.isArray(rawCommentItems) ? rawCommentItems.length : "not array"}`,
-    );
-
-    if (Array.isArray(rawCommentItems) && rawCommentItems.length > 0) {
-      console.log(
-        `[IG L2] first comment keys: ${Object.keys(rawCommentItems[0]).join(", ")}`,
-      );
-
-      // ── Extract creator's own comments ────────────────────────────────────
-      // Instagram comment objects use { user: { username }, text }
-      const creatorOwnComments = extractCreatorComments(
-        rawCommentItems.slice(0, 30).map((c: any) => ({
-          // Normalise to the same shape extractCreatorComments expects
-          user: {
-            unique_id: c?.user?.username || c?.owner?.username || "",
-            uniqueId: c?.user?.username || c?.owner?.username || "",
-            nickname: c?.user?.full_name || "",
+  if (rapidKey) {
+    try {
+      console.log("[IG L2] Fetching comments via instagram-scraper-api2…");
+      const res = await axios.get(
+        "https://instagram-scraper-api2.p.rapidapi.com/v1.1/comments",
+        {
+          params: { code_or_id_or_url: shortcode || canonicalUrl },
+          headers: {
+            "x-rapidapi-key": rapidKey,
+            "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
           },
-          text: c?.text || c?.comment?.text || c?.content || "",
-        })),
-        author_username,
+          timeout: 15000,
+        },
       );
 
-      if (creatorOwnComments.length > 0) {
-        _creatorComments = creatorOwnComments;
-        console.log(
-          `[IG L2] 🎯 Creator's own comments (${creatorOwnComments.length}):`,
-          creatorOwnComments.map((c) => `"${c.slice(0, 80)}"`).join(", "),
-        );
-      }
-
-      const allCommentTexts = rawCommentItems
-        .slice(0, 30)
-        .map((c: any) => c?.text || c?.comment?.text || c?.content || "")
-        .filter((t: string) => t.trim().length > 2);
-
-      // Smart filter: creator > answers > questions > neutral (same as TikTok)
-      const { answers, questions } = filterUsefulComments(allCommentTexts);
-      const neutral = allCommentTexts.filter(
-        (t) =>
-          !_creatorComments.includes(t) &&
-          !answers.includes(t) &&
-          !questions.includes(t),
-      );
-
-      top_comments = [
-        ..._creatorComments,
-        ...answers,
-        ...questions.slice(0, 3),
-        ...neutral.slice(0, 4),
-      ].slice(0, 15);
+      rawCommentItems =
+        res.data?.data?.items ||
+        res.data?.items ||
+        res.data?.data?.comments ||
+        res.data?.comments ||
+        [];
 
       console.log(
-        `[IG L2] Comments ✅ | total: ${allCommentTexts.length} | creator: ${_creatorComments.length} | answers: ${answers.length} | questions: ${questions.length} | kept: ${top_comments.length}`,
+        `[IG L2] raw comment items: ${Array.isArray(rawCommentItems) ? rawCommentItems.length : "not array"}`,
       );
-    } else {
-      console.warn(`[IG L2] 0 comments returned`);
+
+      if (Array.isArray(rawCommentItems) && rawCommentItems.length > 0) {
+        console.log(
+          `[IG L2] first comment keys: ${Object.keys(rawCommentItems[0]).join(", ")}`,
+        );
+
+        // ── Extract creator's own comments ────────────────────────────────────
+        // Instagram comment objects use { user: { username }, text }
+        const creatorOwnComments = extractCreatorComments(
+          rawCommentItems.slice(0, 30).map((c: any) => ({
+            // Normalise to the same shape extractCreatorComments expects
+            user: {
+              unique_id: c?.user?.username || c?.owner?.username || "",
+              uniqueId: c?.user?.username || c?.owner?.username || "",
+              nickname: c?.user?.full_name || "",
+            },
+            text: c?.text || c?.comment?.text || c?.content || "",
+          })),
+          author_username,
+        );
+
+        if (creatorOwnComments.length > 0) {
+          _creatorComments = creatorOwnComments;
+          console.log(
+            `[IG L2] 🎯 Creator's own comments (${creatorOwnComments.length}):`,
+            creatorOwnComments.map((c) => `"${c.slice(0, 80)}"`).join(", "),
+          );
+        }
+
+        const allCommentTexts = rawCommentItems
+          .slice(0, 30)
+          .map((c: any) => c?.text || c?.comment?.text || c?.content || "")
+          .filter((t: string) => t.trim().length > 2);
+
+        // Smart filter: creator > answers > questions > neutral (same as TikTok)
+        const { answers, questions } = filterUsefulComments(allCommentTexts);
+        const neutral = allCommentTexts.filter(
+          (t) =>
+            !_creatorComments.includes(t) &&
+            !answers.includes(t) &&
+            !questions.includes(t),
+        );
+
+        top_comments = [
+          ..._creatorComments,
+          ...answers,
+          ...questions.slice(0, 3),
+          ...neutral.slice(0, 4),
+        ].slice(0, 15);
+
+        console.log(
+          `[IG L2] Comments ✅ | total: ${allCommentTexts.length} | creator: ${_creatorComments.length} | answers: ${answers.length} | questions: ${questions.length} | kept: ${top_comments.length}`,
+        );
+      } else {
+        console.warn(`[IG L2] 0 comments returned`);
+      }
+    } catch (e: any) {
+      console.warn("[IG L2] Comments failed:", e.message);
     }
-  } catch (e: any) {
-    console.warn("[IG L2] Comments failed:", e.message);
   }
 
   await sleep(300);
@@ -1295,7 +1355,7 @@ export async function scrapeInstagram(url: string): Promise<RichPostData> {
   }
 
   // ── Layer 3: User Bio (instagram-scraper-api2 /v1.1/info) ────────────────
-  if (author_username) {
+  if (rapidKey && author_username) {
     try {
       console.log(`[IG L3] Fetching bio for @${author_username}…`);
       const res = await axios.get(

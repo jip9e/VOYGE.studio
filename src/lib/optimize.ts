@@ -94,18 +94,37 @@ export async function optimizeRoute(coordinates: [number, number][]) {
 
   try {
     const response = await axios.get(url);
-    if (response.data.code !== "Ok") {
-      throw new Error(response.data.message || "Optimization failed");
+    const data = response.data;
+
+    if (data.code !== "Ok") {
+      const message = data.message || "Optimization failed";
+
+      if (/no route found/i.test(message)) {
+        console.warn("Route Optimization Warning:", message, { coordinates });
+
+        return {
+          geometry: {
+            type: "LineString",
+            coordinates,
+          },
+          waypoints: coordinates.map((location, waypoint_index) => ({
+            location,
+            waypoint_index,
+          })),
+        };
+      }
+
+      throw new Error(message);
     }
 
     return {
-      geometry: response.data.trips[0].geometry,
-      waypoints: response.data.waypoints.sort(
+      geometry: data.trips[0].geometry,
+      waypoints: data.waypoints.sort(
         (a: any, b: any) => a.waypoint_index - b.waypoint_index,
       ),
     };
   } catch (error) {
-    console.error("Route Optimization Error:", error);
+    console.error("Route Optimization Error:", error, { coordinates });
     return null;
   }
 }
