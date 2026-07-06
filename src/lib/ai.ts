@@ -80,10 +80,18 @@ import {
 } from "@/lib/scrapers";
 
 const token = process.env.GITHUB_MODELS_TOKEN || "";
-const client = ModelClient(
-  "https://models.inference.ai.azure.com",
-  new AzureKeyCredential(token),
-);
+// Lazy so importing this module never throws when the token is absent
+// (AzureKeyCredential rejects empty strings at construction time).
+let _client: ReturnType<typeof ModelClient> | null = null;
+function getAiClient() {
+  if (!_client) {
+    _client = ModelClient(
+      "https://models.inference.ai.azure.com",
+      new AzureKeyCredential(token || "missing-token"),
+    );
+  }
+  return _client;
+}
 
 // ─── Rich Data Interface ──────────────────────────────────────────────────────
 export interface RichPostData {
@@ -376,7 +384,7 @@ ${context}
 
   try {
     const response = await Promise.race([
-      client.path("/chat/completions").post({
+      getAiClient().path("/chat/completions").post({
         body: {
           messages: [
             {
@@ -452,7 +460,7 @@ Return ONLY a valid JSON object with exactly these keys:
   try {
     // Race the AI call against a 12-second timeout so we never hang the pipeline
     const response = await Promise.race([
-      client.path("/chat/completions").post({
+      getAiClient().path("/chat/completions").post({
         body: {
           messages: [
             {

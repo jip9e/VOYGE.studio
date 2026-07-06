@@ -50,7 +50,7 @@
  *
  * @module app/layout
  */
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -67,8 +67,16 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "VOYGE | Next-Gen Travel",
   description: "Your social media saves, mathematically perfected.",
-  viewport:
-    "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0",
+};
+
+// Pinch-zoom stays disabled to protect map/sheet gestures; viewportFit
+// "cover" makes env(safe-area-inset-*) non-zero on notched iPhones.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

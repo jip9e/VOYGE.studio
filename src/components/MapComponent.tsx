@@ -214,6 +214,14 @@ export default function MapComponent({
   // ── Initial map creation ──────────────────────────────────────────────────
   useEffect(() => {
     if (!mapContainerRef.current) return;
+    // Without a token mapbox-gl throws on construction — degrade to a black
+    // backdrop instead of crashing the whole app (e.g. previews without env)
+    if (!mapboxgl.accessToken) {
+      console.warn(
+        "[Map] NEXT_PUBLIC_MAPBOX_TOKEN is missing — map rendering disabled.",
+      );
+      return;
+    }
 
     mapRef.current = new mapboxgl.Map({
       container: mapContainerRef.current,
@@ -328,7 +336,7 @@ export default function MapComponent({
         .setLngLat(spot.coordinates)
         .setPopup(
           new mapboxgl.Popup({ offset: 25, closeButton: false }).setHTML(
-            `<div class="p-2 bg-black text-white text-[10px] font-black uppercase tracking-widest rounded-lg border border-[#333]">${spot.name}</div>`,
+            `<div style="padding:8px 12px;background:linear-gradient(165deg,rgba(20,20,20,0.9),rgba(0,0,0,0.8));backdrop-filter:blur(24px) saturate(170%);-webkit-backdrop-filter:blur(24px) saturate(170%);color:#fff;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.1em;border-radius:12px;border:1px solid rgba(255,255,255,0.15);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3),0 20px 60px rgba(0,0,0,0.55)">${spot.name}</div>`,
           ),
         )
         .addTo(map);
@@ -342,5 +350,5 @@ export default function MapComponent({
     }
   }, [spots]);
 
-  return <div ref={mapContainerRef} className="w-full h-full" />;
+  return <div ref={mapContainerRef} className="w-full h-full bg-black" />;
 }
