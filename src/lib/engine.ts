@@ -154,14 +154,13 @@ function detectPlatform(url: string): "instagram" | "tiktok" | null {
 
 function extractPostId(url: string, platform: "instagram" | "tiktok"): string {
   if (platform === "instagram") {
-    const reelMatch = url.match(/\/reel\/([^/?#]+)/);
-    const pMatch = url.match(/\/p\/([^/?#]+)/);
-    return reelMatch?.[1] || pMatch?.[1] || "";
+    return url.match(/\/(?:reel|reels|p|tv)\/([^/?#]+)/)?.[1] || "";
   }
   if (platform === "tiktok") {
+    // Both /video/<id> (videos) and /photo/<id> (image slideshows)
     return (
-      url.match(/\/video\/(\d+)/)?.[1] ||
-      url.split("/video/")[1]?.split("?")[0] ||
+      url.match(/\/(?:video|photo)\/(\d+)/)?.[1] ||
+      url.split(/\/(?:video|photo)\//)[1]?.split("?")[0] ||
       ""
     );
   }

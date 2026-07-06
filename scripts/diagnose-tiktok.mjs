@@ -105,8 +105,9 @@ try {
 
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || "";
 if (!RAPIDAPI_KEY) {
-  console.error("❌ RAPIDAPI_KEY is missing. Add it to .env.local");
-  process.exit(1);
+  console.warn(
+    "⚠️  RAPIDAPI_KEY missing — tiktok-scraper7 steps will be skipped; free tikwm steps still run.\n",
+  );
 }
 
 const RAW_URL = process.argv[2] || "https://vt.tiktok.com/ZSuhUpWxm/";
@@ -182,11 +183,16 @@ function dump(label, obj, maxDepth = 4) {
 }
 
 function extractVideoId(url) {
+  // Matches both /video/<id> and /photo/<id> (image slideshow posts)
   return (
-    url.match(/\/video\/(\d+)/)?.[1] ||
-    url.split("/video/")[1]?.split("?")[0] ||
+    url.match(/\/(?:video|photo)\/(\d+)/)?.[1] ||
+    url.split(/\/(?:video|photo)\//)[1]?.split("?")[0] ||
     ""
   );
+}
+
+function detectContentKind(url) {
+  return /\/photo\//.test(url) ? "photo" : "video";
 }
 
 function extractUsername(url) {
@@ -251,6 +257,13 @@ async function main() {
       }
       console.log("  poi_info:", JSON.stringify(d.poi_info || null));
       console.log("  music title:", d.music?.title);
+      console.log(
+        "  images (slideshow):",
+        Array.isArray(d.images) ? `${d.images.length} slides` : "none",
+      );
+      if (Array.isArray(d.images) && d.images.length > 0) {
+        console.log("  images[0]:", d.images[0]?.slice(0, 100));
+      }
 
       if (!video_id && d.id) video_id = String(d.id);
       if (!author_username && d.author?.unique_id)
@@ -263,11 +276,12 @@ async function main() {
     console.error("❌ tikwm Layer 1 failed:", e.message);
   }
 
+  const contentKind = detectContentKind(resolvedUrl);
   const canonicalUrl =
     author_username && video_id
-      ? `https://www.tiktok.com/@${author_username}/video/${video_id}`
+      ? `https://www.tiktok.com/@${author_username}/${contentKind}/${video_id}`
       : video_id
-        ? `https://www.tiktok.com/video/${video_id}`
+        ? `https://www.tiktok.com/${contentKind}/${video_id}`
         : resolvedUrl;
 
   console.log("\n🔗 Canonical URL:", canonicalUrl);
@@ -276,11 +290,9 @@ async function main() {
 
   // Step 3: tiktok-scraper7 /video/info
   section("STEP 3 — tiktok-scraper7 /video/info (Layer 1.5)");
-  for (const paramSet of [
-    { url: canonicalUrl },
-    { video_id },
-    { url: resolvedUrl },
-  ]) {
+  for (const paramSet of RAPIDAPI_KEY
+    ? [{ url: canonicalUrl }, { video_id }, { url: resolvedUrl }]
+    : []) {
     try {
       console.log(`\n  Trying params: ${JSON.stringify(paramSet)}`);
       const r = await fetchRapid(
@@ -330,11 +342,13 @@ async function main() {
 
   // Step 4: Comment list
   section("STEP 4 — tiktok-scraper7 /comment/list (Layer 2)");
-  for (const paramSet of [
-    { url: canonicalUrl, count: "20" },
-    { video_id, count: "20" },
-    { url: resolvedUrl, count: "20" },
-  ]) {
+  for (const paramSet of RAPIDAPI_KEY
+    ? [
+        { url: canonicalUrl, count: "20" },
+        { video_id, count: "20" },
+        { url: resolvedUrl, count: "20" },
+      ]
+    : []) {
     try {
       console.log(`\n  Trying params: ${JSON.stringify(paramSet)}`);
       const r = await fetchRapid(
@@ -437,8 +451,11 @@ async function main() {
     }
 
     // tiktok-scraper7 GET
-    try {
-      console.log(`\n  tiktok-scraper7 GET /user/info for @${author_username}`);
+    if (RAPIDAPI_KEY)
+      try {
+        console.log(
+          `\n  tiktok-scraper7 GET /user/info for @${author_username}`,
+        );
       const r = await fetchRapid(
         "https://tiktok-scraper7.p.rapidapi.com/user/info",
         { unique_id: author_username },

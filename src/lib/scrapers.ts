@@ -774,6 +774,8 @@ export interface RichPostData {
   _creatorComments?: string[];
   _compositeHints?: CompositeLocationHint[];
   _anchorLocations?: string[];
+  // Slideshow (photo post) image URLs — first entry doubles as the thumbnail
+  _slideImages?: string[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -1479,9 +1481,17 @@ export async function scrapeTikTok(url: string): Promise<RichPostData> {
   let top_comments: string[] = [];
   let user_bio = "";
   let video_id =
-    url.match(/\/video\/(\d+)/)?.[1] ||
-    url.split("/video/")[1]?.split("?")[0] ||
+    url.match(/\/(?:video|photo)\/(\d+)/)?.[1] ||
+    url.split(/\/(?:video|photo)\//)[1]?.split("?")[0] ||
     "";
+
+  // Photo posts (image slideshows) live at /photo/<id> instead of /video/<id>.
+  // Short vm./vt. links don't reveal the type — tikwm's `images` array flips
+  // this to "photo" later in that case.
+  let contentType: "video" | "photo" = /\/photo\//.test(url)
+    ? "photo"
+    : "video";
+  let slideImages: string[] = [];
 
   // Extract username from URL upfront — works for both:
   //   https://www.tiktok.com/@alexxhinson/video/123
@@ -1495,10 +1505,11 @@ export async function scrapeTikTok(url: string): Promise<RichPostData> {
     username: string,
     vid: string,
     rawUrl: string,
+    kind: "video" | "photo" = "video",
   ): string {
     if (username && vid)
-      return `https://www.tiktok.com/@${username}/video/${vid}`;
-    if (vid) return `https://www.tiktok.com/video/${vid}`;
+      return `https://www.tiktok.com/@${username}/${kind}/${vid}`;
+    if (vid) return `https://www.tiktok.com/${kind}/${vid}`;
     return rawUrl;
   }
 
@@ -1518,6 +1529,17 @@ export async function scrapeTikTok(url: string): Promise<RichPostData> {
       author_username =
         d.author?.unique_id || d.author?.uniqueId || d.author?.uid || "";
       if (!video_id) video_id = String(d.id || "");
+
+      // Photo slideshows: tikwm returns the slides in `images` and the
+      // `cover` is often a collage — prefer the first slide as thumbnail
+      if (Array.isArray(d.images) && d.images.length > 0) {
+        contentType = "photo";
+        slideImages = d.images.filter(Boolean).slice(0, 10);
+        if (slideImages[0]) thumbnail = slideImages[0];
+        console.log(
+          `[TT L1] 🖼️ Photo slideshow detected: ${slideImages.length} slides`,
+        );
+      }
 
       // tikwm returns hashtag list as array of objects { id, name, title }
       if (Array.isArray(d.hashtag) && d.hashtag.length > 0) {
@@ -1586,7 +1608,8 @@ export async function scrapeTikTok(url: string): Promise<RichPostData> {
       caption = res.data.title || "";
       thumbnail = res.data.thumbnail_url || null;
       author_username = res.data.author_name?.replace("@", "") || "";
-      if (!video_id) video_id = url.split("/video/")[1]?.split("?")[0] || "";
+      if (!video_id)
+        video_id = url.split(/\/(?:video|photo)\//)[1]?.split("?")[0] || "";
       const captionTags = extractHashtagsFromText(caption);
       hashtags = [...new Set([...hashtags, ...captionTags])];
       console.log(
@@ -1601,7 +1624,12 @@ export async function scrapeTikTok(url: string): Promise<RichPostData> {
 
   // ── Layer 1.5: tiktok-scraper7 /video/info — richer caption, hashtags, POI ─
   // tiktok-scraper7 requires the FULL url param, not video_id
-  const canonicalUrl = buildCanonicalUrl(author_username, video_id, url);
+  const canonicalUrl = buildCanonicalUrl(
+    author_username,
+    video_id,
+    url,
+    contentType,
+  );
   if (rapidKey && (video_id || url)) {
     try {
       console.log(
@@ -1639,6 +1667,28 @@ export async function scrapeTikTok(url: string): Promise<RichPostData> {
           );
         }
 
+        // Photo slideshows: aweme-style responses expose slides via image_post_info
+        const imagePost =
+          d.image_post_info || d.item_info?.image_post_info || null;
+        if (Array.isArray(imagePost?.images) && imagePost.images.length > 0) {
+          contentType = "photo";
+          const urls = imagePost.images
+            .map(
+              (img: any) =>
+                img?.display_image?.url_list?.[0] ||
+                img?.owner_watermark_image?.url_list?.[0] ||
+                "",
+            )
+            .filter(Boolean);
+          if (urls.length > 0 && slideImages.length === 0) {
+            slideImages = urls.slice(0, 10);
+            console.log(
+              `[TT L1.5] 🖼️ Photo slideshow via image_post_info: ${slideImages.length} slides`,
+            );
+          }
+          if (!thumbnail && slideImages[0]) thumbnail = slideImages[0];
+        }
+
         // Better thumbnail sources from nested video object
         if (!thumbnail) {
           thumbnail =
@@ -1646,6 +1696,7 @@ export async function scrapeTikTok(url: string): Promise<RichPostData> {
             d.video?.dynamic_cover?.url_list?.[0] ||
             d.video?.origin_cover?.url_list?.[0] ||
             d.cover_url ||
+            slideImages[0] ||
             null;
         }
 
@@ -1707,7 +1758,12 @@ export async function scrapeTikTok(url: string): Promise<RichPostData> {
 
   // ── Layer 2: Comments ─────────────────────────────────────────────────────
   // tiktok-scraper7 /comment/list requires `url` (full TikTok URL), NOT video_id
-  const commentUrl = buildCanonicalUrl(author_username, video_id, url);
+  const commentUrl = buildCanonicalUrl(
+    author_username,
+    video_id,
+    url,
+    contentType,
+  );
   if (rapidKey && (video_id || url)) {
     try {
       console.log(`[TT L2] Fetching comments | url: ${commentUrl}`);
@@ -2136,5 +2192,6 @@ export async function scrapeTikTok(url: string): Promise<RichPostData> {
     _creatorComments: finalCreatorComments,
     _compositeHints: compositeHints,
     _anchorLocations: anchorLocations,
+    _slideImages: slideImages.length > 0 ? slideImages : undefined,
   } as any;
 }
