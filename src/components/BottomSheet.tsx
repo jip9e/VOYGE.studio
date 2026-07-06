@@ -143,8 +143,10 @@ export default function BottomSheet({
               </div>
             )}
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar px-4 pb-safe-4 flex flex-col">
+            {/* Content — block layout on purpose: the sheet is the single
+                scroll context, so children keep their natural height instead
+                of being flex-squeezed */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar px-4 pb-safe-4">
               {children}
             </div>
           </motion.div>

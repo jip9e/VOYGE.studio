@@ -40,7 +40,7 @@ export default function SearchBar({
   const hero = variant === "hero";
 
   return (
-    <div className={cn("relative", hero ? "w-full group" : "mb-3")}>
+    <div className={cn("relative", hero ? "w-full group" : "mb-3 shrink-0")}>
       {hero && (
         <div
           className={cn(
