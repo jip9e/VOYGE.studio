@@ -36,7 +36,7 @@ export default function StatsPanel({ spots }: StatsPanelProps) {
   if (stats.totalSpots === 0) return null;
 
   return (
-    <div className="glass specular rounded-card p-4 mb-3 pointer-events-auto">
+    <div className="shrink-0 glass specular rounded-card p-4 mb-3 pointer-events-auto">
       <div className="grid grid-cols-3 gap-2 mb-3">
         <div>
           <p className="text-xl font-black italic tracking-tighter text-white leading-none">

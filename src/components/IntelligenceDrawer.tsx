@@ -91,7 +91,7 @@ export default function IntelligenceDrawer({
                       initial={{ opacity: 0, x: 30 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: i * 0.1, type: "spring", damping: 15 }}
-                      className="group flex gap-4 md:gap-6 p-4 md:p-6 rounded-card md:rounded-panel glass hover:bg-white/[0.06] transition-all shadow-2xl relative overflow-hidden"
+                      className="group shrink-0 flex gap-4 md:gap-6 p-4 md:p-6 rounded-card md:rounded-panel glass hover:bg-white/[0.06] transition-all shadow-2xl relative overflow-hidden"
                     >
                       <div className="w-16 md:w-20 h-16 md:h-20 rounded-2xl md:rounded-card bg-black flex-shrink-0 overflow-hidden border border-white/10 relative group-hover:scale-110 transition-transform duration-700">
                         {spot.thumbnail ? (

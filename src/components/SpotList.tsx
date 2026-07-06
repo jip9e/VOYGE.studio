@@ -93,7 +93,7 @@ export default function SpotList({
           className={cn(
             "w-full flex items-center justify-between px-4 py-2.5 rounded-2xl text-sm transition-all group mb-1 cursor-pointer pointer-events-auto",
             item.id === activeFilter
-              ? "bg-white text-black shadow-glow"
+              ? "bg-white text-black shadow-lg"
               : "text-[#a1a1aa] hover:bg-white/5 hover:text-white",
           )}
         >

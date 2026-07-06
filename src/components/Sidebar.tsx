@@ -1,12 +1,12 @@
 "use client";
 
-import { Check, Copy, Key, Navigation, RefreshCw, Route, Share, User, X } from "lucide-react";
+import { ArrowLeft, Check, Copy, Key, Navigation, RefreshCw, Route, Share, User, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import SearchBar, { type PlaceSuggestion } from "@/components/SearchBar";
 import SpotList, { type GroupedSpots } from "@/components/SpotList";
 import StatsPanel from "@/components/StatsPanel";
 import TripPlanner from "@/components/TripPlanner";
-import { GlassChip } from "@/components/glass/Glass";
+import { GlassChip, GlassIconButton } from "@/components/glass/Glass";
 import type { UseTripsReturn } from "@/hooks/useTrips";
 import type { SpotFilter, TravelSpot, Trip, TripDay } from "@/lib/types";
 
@@ -101,7 +101,7 @@ export default function SidebarBody(props: SidebarBodyProps) {
         onSelect={props.handleSearchSelect}
       />
 
-      <div className="flex items-center justify-between px-2 py-3 mb-3">
+      <div className="shrink-0 flex items-center justify-between px-2 py-3 mb-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-white rounded-2xl flex items-center justify-center shadow-glow">
             <Navigation className="text-black w-6 h-6 fill-current" />
@@ -123,8 +123,8 @@ export default function SidebarBody(props: SidebarBodyProps) {
 
       <StatsPanel spots={masterSpots} />
 
-      {view === "spots" && (
-        <div className="flex gap-3 mb-3 overflow-x-auto pb-2 custom-scrollbar pointer-events-auto">
+      {view === "spots" ? (
+        <div className="shrink-0 flex gap-3 mb-3 overflow-x-auto pb-2 custom-scrollbar pointer-events-auto">
           {CATEGORIES.map((cat) => (
             <GlassChip
               key={cat}
@@ -135,9 +135,30 @@ export default function SidebarBody(props: SidebarBodyProps) {
             </GlassChip>
           ))}
         </div>
+      ) : (
+        <div className="shrink-0 flex items-center gap-3 mb-3 pointer-events-auto">
+          <GlassIconButton
+            label="Back to spots"
+            size="sm"
+            onClick={() => setView("spots")}
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </GlassIconButton>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-white italic">
+            Trips
+          </p>
+        </div>
       )}
 
-      <nav className="space-y-1 flex-1 overflow-y-auto min-h-0 custom-scrollbar pr-2 relative pointer-events-auto">
+      <nav
+        className={cn(
+          "space-y-1 relative pointer-events-auto",
+          // Desktop aside is a fixed-height flex column, so the list scrolls
+          // internally; in the mobile sheet the sheet itself is the scroller
+          // and the list keeps its natural height.
+          !isMobile && "flex-1 overflow-y-auto min-h-0 custom-scrollbar pr-2",
+        )}
+      >
         {view === "trips" ? (
           <TripPlanner
             tripsApi={props.tripsApi}
@@ -232,7 +253,14 @@ export default function SidebarBody(props: SidebarBodyProps) {
         )}
       </nav>
 
-      <div className="mt-2 px-2 space-y-1 pointer-events-auto">
+      <div
+        className={cn(
+          "shrink-0 mt-2 px-2 space-y-1 pointer-events-auto",
+          // Trips view has its own per-day routing CTA — only surface the
+          // footer there when a route is active (to clear it)
+          view === "trips" && !routeGeometry && "hidden",
+        )}
+      >
         {routeGeometry ? (
           <button
             onClick={(e) => {
@@ -274,7 +302,7 @@ export default function SidebarBody(props: SidebarBodyProps) {
         )}
       </div>
 
-      <div className="mt-3 border-t border-white/5 pt-3 flex items-center gap-3 px-2 mb-1 pointer-events-none">
+      <div className="shrink-0 mt-3 border-t border-white/5 pt-3 flex items-center gap-3 px-2 mb-1 pointer-events-none">
         <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10">
           <User className="w-5 h-5 text-mist" />
         </div>
