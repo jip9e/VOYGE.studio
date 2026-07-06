@@ -2,50 +2,27 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Search,
-  MapPin,
-  Navigation,
-  List,
-  FolderOpen,
-  MoreHorizontal,
-  User,
-  Sparkles,
-  ExternalLink,
-  Compass,
-  Route,
-  Trash2,
-  Heart,
-  ChevronLeft,
-  ChevronRight,
-  LogIn,
-  X,
-  Loader2,
-  RefreshCw,
-  Folder,
-  Globe,
-  Menu,
-  Key,
-  Check,
-  Copy,
-  Share,
-  Plus,
-  Briefcase,
-  Map as MapIcon,
-  Image as ImageIcon,
-} from "lucide-react";
+import { ChevronLeft, Loader2, LogIn, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import dynamicMap from "next/dynamic";
 import BottomSheet from "@/components/BottomSheet";
-import { getCountryFlag } from "@/lib/flags";
+import SidebarBody, { type SidebarView } from "@/components/Sidebar";
+import SearchBar, { type PlaceSuggestion } from "@/components/SearchBar";
+import NavDock from "@/components/NavDock";
+import IntelligenceDrawer from "@/components/IntelligenceDrawer";
+import AuthModal from "@/components/modals/AuthModal";
+import ShortcutModal from "@/components/modals/ShortcutModal";
+import { useTrips } from "@/hooks/useTrips";
+import type { SpotFilter, TravelSpot, Trip, TripDay } from "@/lib/types";
 
-// Firebase Imports
+// Firebase
 import { auth, db } from "@/lib/firebase";
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  type User,
 } from "firebase/auth";
 import {
   collection,
@@ -57,7 +34,6 @@ import {
   doc,
   updateDoc,
   setDoc,
-  orderBy,
   serverTimestamp,
 } from "firebase/firestore";
 
@@ -66,599 +42,43 @@ import type { MapStyleMode } from "@/components/MapComponent";
 const MapComponent = dynamicMap(() => import("@/components/MapComponent"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full bg-[#000] flex flex-col items-center justify-center gap-4">
+    <div className="w-full h-full bg-black flex flex-col items-center justify-center gap-4">
       <Loader2 className="w-10 h-10 text-white animate-spin opacity-20" />
-      <div className="text-[#404040] text-[10px] font-black uppercase tracking-[0.4em] italic text-center px-10">
+      <div className="text-fog text-[10px] font-black uppercase tracking-[0.4em] italic text-center px-10">
         VOYGE Engine Booting
       </div>
     </div>
   ),
 });
 
-interface TravelSpot {
-  id?: string;
-  name: string;
-  city: string;
-  country: string;
-  category: string;
-  vibe: string;
-  coordinates: [number, number];
-  full_address: string;
-  thumbnail?: string;
-  original_link?: string;
-  is_favorite?: boolean;
-  description?: string;
-}
-
-function SidebarContent({
-  masterSpots,
-  routeGeometry,
-  setRouteGeometry,
-  activeFilter,
-  setActiveFilter,
-  groupedSpots,
-  toggleFolder,
-  expandedFolders,
-  runOptimization,
-  isOptimizing,
-  deleteFolder,
-  toggleFavorite,
-  deleteSpot,
-  user,
-  telegramId,
-  setShowShortcutInstructions,
-  generateLinkToken,
-  linkToken,
-  copied,
-  setCopied,
-  fetchSpots,
-  dbStatus,
-  isMobile,
-  setSidebarVisible,
-  activeCategory,
-  setActiveCategory,
-  inputValue,
-  setInputValue,
-  handlePaste,
-  isAnalyzing,
-  isBloomed,
-  isFocused,
-  setIsFocused,
-  suggestions,
-  handleSearchSelect,
-  isSearching,
-}: any) {
-  return (
-    <>
-      {/* SEARCH BAR INTEGRATION */}
-      <div className="mb-3 pointer-events-auto relative">
-        <form onSubmit={handlePaste} className="w-full relative group">
-          <div className="relative bg-white/5 border border-white/10 rounded-2xl flex items-center px-4 py-3 gap-3 transition-all duration-500 hover:border-white/20">
-            {isSearching ? (
-              <Loader2 className="w-4 h-4 text-white/40 animate-spin" />
-            ) : (
-              <Search
-                className={cn(
-                  "w-4 h-4 transition-all duration-700",
-                  isFocused ? "text-white rotate-180" : "text-[#404040]",
-                )}
-              />
-            )}
-            <input
-              type="text"
-              placeholder="Add link or search place..."
-              className="bg-transparent border-none outline-none flex-1 text-xs placeholder-[#404040] font-black tracking-tighter text-white"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onFocus={() => setIsFocused(true)}
-              onBlur={() => setTimeout(() => setIsFocused(false), 200)}
-            />
-            <button
-              type="submit"
-              className="bg-white text-black px-4 py-1.5 rounded-lg text-[9px] font-black hover:scale-105 transition-all active:scale-95 disabled:opacity-20 uppercase tracking-widest"
-              disabled={isAnalyzing}
-            >
-              {isAnalyzing ? "..." : "Add"}
-            </button>
-          </div>
-        </form>
-
-        {/* Suggestions Dropdown */}
-        <AnimatePresence>
-          {isFocused && suggestions.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              className="absolute top-full left-0 right-0 mt-2 bg-[#0a0a0a] border border-white/10 rounded-2xl overflow-hidden z-[200] shadow-2xl"
-            >
-              {suggestions.map((s: any, i: number) => (
-                <button
-                  key={i}
-                  onClick={() => handleSearchSelect(s)}
-                  className="w-full flex flex-col gap-0.5 p-4 text-left hover:bg-white/5 transition-colors border-b border-white/5 last:border-none group"
-                >
-                  <p className="text-xs font-black text-white group-hover:text-white transition-colors">
-                    {s.name}
-                  </p>
-                  <p className="text-[9px] text-[#525252] font-bold uppercase tracking-tighter">
-                    {s.city}, {s.country}
-                  </p>
-                </button>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      <div className="flex items-center justify-between px-2 py-3 mb-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-white rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.3)]">
-            <Navigation className="text-black w-6 h-6 fill-current" />
-          </div>
-          <span className="text-2xl font-black tracking-tighter uppercase italic tracking-widest text-white">
-            Voyge
-          </span>
-        </div>
-        {isMobile && (
-          <button
-            onClick={() => setSidebarVisible(false)}
-            className="p-2 text-[#404040]"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        )}
-      </div>
-
-      <div
-        className={cn(
-          "flex gap-3 mb-3 overflow-x-auto pb-2 custom-scrollbar pointer-events-auto no-scrollbar",
-          !isMobile && "gap-4",
-        )}
-      >
-        {["All", "Attractions", "Museum", "Parks", "Food"].map((cat) => (
-          <button
-            key={cat}
-            onClick={() => setActiveCategory(cat)}
-            className={cn(
-              "px-5 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border",
-              activeCategory === cat
-                ? "bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]"
-                : "bg-white/5 text-[#737373] border-white/5 hover:text-white hover:bg-white/10",
-            )}
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
-
-      <nav className="space-y-1 flex-1 overflow-y-auto min-h-0 custom-scrollbar pr-2 relative pointer-events-auto">
-        {[
-          {
-            icon: MapPin,
-            label: "Master Map",
-            id: "all",
-            count: masterSpots.length,
-          },
-          {
-            icon: Compass,
-            label: "Itineraries",
-            id: "itineraries",
-            count: routeGeometry ? 1 : 0,
-          },
-          {
-            icon: Heart,
-            label: "Favorites",
-            id: "favorites",
-            count: masterSpots.filter((s: any) => s.is_favorite).length,
-          },
-        ].map((item) => (
-          <button
-            key={item.label}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (item.id === "all" || item.id === "favorites")
-                setActiveFilter(item.id as any);
-            }}
-            className={cn(
-              "w-full flex items-center justify-between px-4 py-2 rounded-2xl text-sm transition-all group mb-1 cursor-pointer pointer-events-auto",
-              item.id === activeFilter
-                ? "bg-white text-black shadow-xl"
-                : "text-[#a1a1aa] hover:bg-white/5 hover:text-white",
-            )}
-          >
-            <div className="flex items-center gap-3 pointer-events-none">
-              <item.icon
-                className={cn(
-                  "w-4 h-4",
-                  item.id === activeFilter ? "stroke-[3px]" : "stroke-2",
-                )}
-              />
-              <span className="font-bold tracking-tight">{item.label}</span>
-            </div>
-            {item.count !== undefined && (
-              <span
-                className={cn(
-                  "text-[10px] font-black px-2 py-0.5 rounded-lg",
-                  item.id === activeFilter
-                    ? "bg-black/10 text-black"
-                    : "bg-white/5",
-                )}
-              >
-                {item.count}
-              </span>
-            )}
-          </button>
-        ))}
-
-        <div className="h-3" />
-
-        <div className="flex items-center justify-between px-4 mb-2">
-          <p className="text-[10px] uppercase font-black tracking-[0.2em] text-[#404040]">
-            Countries
-          </p>
-          <Globe className="w-3 h-3 text-[#404040]" />
-        </div>
-
-        <div className="space-y-2 pointer-events-auto">
-          {Object.entries(groupedSpots).map(
-            ([country, cityGroups]: [string, any]) => {
-              const allSpotsInCountry = Object.values(
-                cityGroups,
-              ).flat() as TravelSpot[];
-              return (
-                <div key={country} className="space-y-1">
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => toggleFolder(country)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        toggleFolder(country);
-                      }
-                    }}
-                    className="w-full flex items-center justify-between p-3 rounded-2xl bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.06] transition-all cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">
-                          {getCountryFlag(country)}
-                        </span>
-                        <Folder
-                          className={cn(
-                            "w-4 h-4 transition-all",
-                            expandedFolders.includes(country)
-                              ? "fill-white text-white"
-                              : "text-[#525252]",
-                          )}
-                        />
-                        <span className="text-xs font-black uppercase tracking-widest truncate max-w-[120px]">
-                          {country}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            runOptimization(allSpotsInCountry);
-                          }}
-                          disabled={isOptimizing}
-                          className="p-1.5 text-white/60 hover:text-white transition-all bg-white/10 rounded-lg active:scale-95"
-                        >
-                          <Route className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteFolder(country, allSpotsInCountry);
-                          }}
-                          className="p-1.5 text-red-500/60 hover:text-red-500 transition-all bg-white/10 rounded-lg active:scale-95"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                    <span className="text-[9px] font-black text-[#525252] bg-white/5 px-2 py-0.5 rounded-md">
-                      {allSpotsInCountry.length}
-                    </span>
-                  </div>
-
-                  <AnimatePresence>
-                    {expandedFolders.includes(country) && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden space-y-6 pl-4 py-4"
-                      >
-                        {Object.entries(cityGroups).map(
-                          ([city, spots]: [string, any]) => (
-                            <div key={city} className="space-y-2">
-                              <div className="flex items-center justify-between pr-2 border-b border-white/5 pb-1 mb-3">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-[#404040] italic">
-                                  {city}
-                                </p>
-                                <span className="text-[8px] font-bold text-white/20">
-                                  {spots.length}
-                                </span>
-                              </div>
-                              <div className="space-y-2">
-                                {spots.map((spot: any, i: number) => (
-                                  <div
-                                    key={spot.id || i}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (spot.coordinates)
-                                        (window as any).flyToSpot?.(
-                                          ...spot.coordinates,
-                                        );
-                                      if (isMobile) setSidebarVisible(false);
-                                    }}
-                                    className={cn(
-                                      "group relative flex items-center gap-4 p-3 rounded-[24px] bg-white/[0.02] border border-transparent hover:border-white/10 hover:bg-white/[0.03] transition-all cursor-pointer overflow-hidden",
-                                      !isMobile && "p-4 gap-5",
-                                    )}
-                                  >
-                                    <div
-                                      className={cn(
-                                        "w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center border border-white/5 group-hover:bg-white/10 transition-colors",
-                                        !isMobile && "w-12 h-12 rounded-[20px]",
-                                      )}
-                                    >
-                                      <MapPin
-                                        className={cn(
-                                          "w-5 h-5 text-[#404040] group-hover:text-white transition-colors",
-                                          !isMobile && "w-6 h-6",
-                                        )}
-                                      />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <p
-                                        className={cn(
-                                          "text-xs font-black truncate tracking-tight text-white/90 group-hover:text-white",
-                                          !isMobile && "text-sm",
-                                        )}
-                                      >
-                                        {spot.name}
-                                      </p>
-                                      <div className="flex items-center gap-2 mt-0.5">
-                                        <p className="text-[9px] text-[#525252] font-black uppercase tracking-tighter">
-                                          {spot.category || "Spot"}
-                                        </p>
-                                        <span className="w-1 h-1 bg-white/10 rounded-full" />
-                                        <p className="text-[9px] text-[#404040] font-bold italic">
-                                          {spot.city}
-                                        </p>
-                                      </div>
-                                      {spot.description && (
-                                        <p
-                                          className={cn(
-                                            "text-[9px] text-[#737373] mt-1 line-clamp-1 group-hover:text-white/60 transition-colors leading-tight",
-                                            !isMobile &&
-                                              "text-[10px] line-clamp-2",
-                                          )}
-                                        >
-                                          {spot.description}
-                                        </p>
-                                      )}
-                                    </div>
-                                    <div
-                                      className={cn(
-                                        "w-16 h-16 rounded-[20px] overflow-hidden bg-black border border-white/5 flex-shrink-0 relative group-hover:scale-105 transition-transform duration-500",
-                                        !isMobile && "w-20 h-20 rounded-[24px]",
-                                      )}
-                                    >
-                                      {spot.thumbnail ? (
-                                        <img
-                                          src={spot.thumbnail}
-                                          className="w-full h-full object-cover grayscale opacity-40 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-700"
-                                        />
-                                      ) : (
-                                        <div className="w-full h-full flex items-center justify-center bg-white/5 opacity-20">
-                                          <Globe className="w-6 h-6" />
-                                        </div>
-                                      )}
-                                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-                                    </div>
-
-                                    {/* Actions Overlay */}
-                                    <div className="absolute right-2 top-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          if (spot.id)
-                                            toggleFavorite(
-                                              spot.id,
-                                              !!spot.is_favorite,
-                                            );
-                                        }}
-                                        className={cn(
-                                          "p-1.5 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 transition-all active:scale-125",
-                                          spot.is_favorite
-                                            ? "text-red-500"
-                                            : "text-white/40 hover:text-white",
-                                        )}
-                                      >
-                                        <Heart
-                                          className={cn(
-                                            "w-4 h-4",
-                                            spot.is_favorite && "fill-current",
-                                          )}
-                                        />
-                                      </button>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          deleteSpot(spot.id, i);
-                                        }}
-                                        className="p-1.5 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 text-white/40 hover:text-red-500 transition-all"
-                                      >
-                                        <Trash2 className="w-3 h-3" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ),
-                        )}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              );
-            },
-          )}
-        </div>
-
-        <div className="h-3" />
-        <div className="px-4 mb-2">
-          <p className="text-[10px] uppercase font-black tracking-[0.2em] text-[#404040] mb-2">
-            Integrations
-          </p>
-          <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.05] flex flex-col gap-3">
-            <div className="flex items-center gap-2 text-white/40 mb-1">
-              <Share className="w-3 h-3" />
-              <span className="text-[10px] font-black uppercase">
-                Sync Shortcut
-              </span>
-            </div>
-            {telegramId ? (
-              <button
-                onClick={() => setShowShortcutInstructions(true)}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-white text-black rounded-xl text-[10px] font-black uppercase transition-all hover:scale-[1.02] active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.2)]"
-              >
-                Setup Shortcut
-              </button>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-[8px] text-[#737373] font-bold uppercase leading-tight italic">
-                  Link your Telegram first to unlock the iPhone Shortcut
-                </p>
-                {linkToken ? (
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between bg-black rounded-lg p-2 border border-white/10">
-                      <code className="text-[10px] font-black text-white">
-                        {linkToken}
-                      </code>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(`/link ${linkToken}`);
-                          setCopied(true);
-                          setTimeout(() => setCopied(false), 2000);
-                        }}
-                        className="text-white/40 hover:text-white transition-all"
-                      >
-                        {copied ? (
-                          <Check className="w-3 h-3 text-green-500" />
-                        ) : (
-                          <Copy className="w-3 h-3" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    onClick={generateLinkToken}
-                    className="w-full flex items-center justify-center gap-2 py-2 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl text-[9px] font-black uppercase transition-all"
-                  >
-                    <Key className="w-3 h-3" /> Get Code
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </nav>
-
-      <div className="mt-2 px-2 space-y-1 pointer-events-auto">
-        {routeGeometry ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setRouteGeometry(null);
-            }}
-            className="w-full bg-white text-black hover:bg-[#e5e5e5] py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-2xl active:scale-95 cursor-pointer pointer-events-auto"
-          >
-            <X className="w-5 h-5" />
-            <span className="text-[11px] font-black uppercase tracking-widest">
-              Clear Journey
-            </span>
-          </button>
-        ) : (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              runOptimization(masterSpots);
-            }}
-            disabled={masterSpots.length < 2 || isOptimizing}
-            className="w-full bg-white text-black hover:bg-[#e5e5e5] py-4 rounded-2xl flex items-center justify-center gap-3 transition-all disabled:opacity-20 shadow-2xl active:scale-95 cursor-pointer pointer-events-auto"
-          >
-            <Route className={cn("w-5 h-5", isOptimizing && "animate-spin")} />
-            <span className="text-[11px] font-black uppercase tracking-widest">
-              {isOptimizing ? "Calculating..." : "Plan All Spots"}
-            </span>
-          </button>
-        )}
-        {user && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              fetchSpots(user.uid);
-            }}
-            className="w-full flex items-center justify-center gap-2 py-2 text-[#404040] hover:text-white transition-all text-[9px] font-black uppercase tracking-widest cursor-pointer pointer-events-auto"
-          >
-            <RefreshCw className="w-3 h-3" /> Sync Firestore
-          </button>
-        )}
-      </div>
-
-      <div className="mt-3 border-t border-white/5 pt-3 flex items-center gap-3 px-2 mb-1 pointer-events-none">
-        <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10">
-          <User className="w-5 h-5 text-[#737373]" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-bold truncate text-white/80">
-            {user ? user.email.split("@")[0] : "Guest Account"}
-          </p>
-          <p
-            className={cn(
-              "text-[9px] uppercase tracking-tighter font-black transition-all",
-              dbStatus.includes("Error") ? "text-red-500" : "text-[#525252]",
-            )}
-          >
-            {dbStatus}
-          </p>
-        </div>
-        <div
-          className={cn(
-            "w-2 h-2 rounded-full shadow-[0_0_10px]",
-            user
-              ? "bg-green-500 shadow-green-500/40"
-              : "bg-orange-500 shadow-orange-500/40",
-          )}
-        />
-      </div>
-    </>
-  );
-}
+const FAILURE_MESSAGES: Record<string, string> = {
+  weak_signals:
+    "This post gave us almost nothing to work with — no caption, location tag, or comments. Try a post with a caption or a tagged location.",
+  no_spots_found:
+    "We analyzed the post but couldn't pin a real-world place. Try a post that names the spot in its caption or comments.",
+  ai_timeout:
+    "The analysis timed out before finding a confident location. Give it another try in a moment.",
+  scrape_failed:
+    "We couldn't read this post — it may be private, removed, or region-locked.",
+};
 
 export default function ZenDashboard() {
   const [inputValue, setInputValue] = useState("");
   const [isBloomed, setIsBloomed] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [mapStyle, setMapStyle] = useState<MapStyleMode>("dark");
   const [masterSpots, setMasterSpots] = useState<TravelSpot[]>([]);
   const [currentAnalysis, setCurrentAnalysis] = useState<TravelSpot[]>([]);
-  const [routeGeometry, setRouteGeometry] = useState<any>(null);
+  const [analysisFailure, setAnalysisFailure] = useState<string | null>(null);
+  const [routeGeometry, setRouteGeometry] = useState<unknown>(null);
   const [sidebarVisible, setSidebarVisible] = useState(false);
+  const [sidebarView, setSidebarView] = useState<SidebarView>("spots");
   const [expandedFolders, setExpandedFolders] = useState<string[]>([]);
-  const [activeFilter, setActiveFilter] = useState<"all" | "favorites">("all");
+  const [activeFilter, setActiveFilter] = useState<SpotFilter>("all");
   const [activeCategory, setActiveCategory] = useState("All");
   const [linkToken, setLinkToken] = useState("");
   const [telegramId, setTelegramId] = useState<string | null>(null);
@@ -666,24 +86,28 @@ export default function ZenDashboard() {
   const [showShortcutInstructions, setShowShortcutInstructions] =
     useState(false);
 
-  // Auth State
-  const [user, setUser] = useState<any>(null);
+  // Auth
+  const [user, setUser] = useState<User | null>(null);
   const [isAuthVisible, setIsAuthVisible] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState("Disconnected");
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  // Mobile detection
+  // Trips
+  const tripsApi = useTrips(user?.uid || null);
+  const [activeTripDay, setActiveTripDay] = useState<{
+    tripId: string;
+    dayId: string;
+  } | null>(null);
+
+  // Structural mobile switch (bottom sheet vs. sidebar) — visual scaling is
+  // handled by md: classes, this only picks the layout skeleton.
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
+    const mq = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
   }, []);
 
   useEffect(() => {
@@ -710,15 +134,39 @@ export default function ZenDashboard() {
     return () => clearTimeout(timeout);
   }, [inputValue]);
 
-  const handleSearchSelect = async (suggestion: any) => {
+  const fetchSpots = useCallback(async (userId: string) => {
+    setDbStatus("Syncing Firestore...");
+    try {
+      const q = query(collection(db, "spots"), where("user_id", "==", userId));
+      const querySnapshot = await getDocs(q);
+      const spots: TravelSpot[] = [];
+      querySnapshot.forEach((d) => {
+        spots.push({ id: d.id, ...d.data() } as TravelSpot);
+      });
+
+      const sortedSpots = spots.sort(
+        (a, b) => (b.created_at?.seconds || 0) - (a.created_at?.seconds || 0),
+      );
+
+      setMasterSpots(sortedSpots);
+      if (sortedSpots.length > 0) setIsBloomed(true);
+      setDbStatus(`Live: ${sortedSpots.length} spots`);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error("Fetch error:", error);
+      setDbStatus(`Error: ${msg}`);
+    }
+  }, []);
+
+  const handleSearchSelect = async (suggestion: PlaceSuggestion) => {
     setInputValue("");
     setSuggestions([]);
     setIsAnalyzing(true);
     setIsBloomed(true);
     setCurrentAnalysis([]);
+    setAnalysisFailure(null);
 
     try {
-      // 1. Get detailed info + Pexels image
       const enhanceRes = await fetch("/api/enhance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -730,13 +178,12 @@ export default function ZenDashboard() {
       });
       const aiData = await enhanceRes.json();
 
-      // 2. Get coordinates
       const { geocodeSpot } = await import("@/lib/geo");
       const geo = await geocodeSpot(suggestion.name, suggestion.city);
 
       const newSpot: TravelSpot = {
         name: suggestion.name,
-        city: suggestion.city || geo.country, // Fallback
+        city: suggestion.city || geo.country,
         country: suggestion.country || geo.country,
         category: aiData.category,
         vibe: aiData.vibe,
@@ -749,7 +196,6 @@ export default function ZenDashboard() {
 
       setCurrentAnalysis([newSpot]);
 
-      // Save to Firebase
       if (user) {
         await addDoc(collection(db, "spots"), {
           ...newSpot,
@@ -767,37 +213,12 @@ export default function ZenDashboard() {
     }
   };
 
-  const fetchSpots = useCallback(async (userId: string) => {
-    setDbStatus("Syncing Firestore...");
-    try {
-      const q = query(collection(db, "spots"), where("user_id", "==", userId));
-      const querySnapshot = await getDocs(q);
-      const spots: TravelSpot[] = [];
-      querySnapshot.forEach((doc) => {
-        spots.push({ id: doc.id, ...doc.data() } as TravelSpot);
-      });
-
-      const sortedSpots = spots.sort((a: any, b: any) => {
-        const timeA = a.created_at?.seconds || 0;
-        const timeB = b.created_at?.seconds || 0;
-        return timeB - timeA;
-      });
-
-      setMasterSpots(sortedSpots);
-      if (sortedSpots.length > 0) setIsBloomed(true);
-      setDbStatus(`Live: ${sortedSpots.length} spots`);
-    } catch (error: any) {
-      console.error("Fetch error:", error);
-      setDbStatus(`Error: ${error.message}`);
-    }
-  }, []);
-
-  // Groups spots by country
   const groupedSpots = useMemo(() => {
-    let filtered =
-      activeFilter === "favorites"
-        ? masterSpots.filter((s) => s.is_favorite)
-        : masterSpots;
+    let filtered = masterSpots;
+    if (activeFilter === "favorites")
+      filtered = filtered.filter((s) => s.is_favorite);
+    else if (activeFilter === "visited")
+      filtered = filtered.filter((s) => s.status === "visited");
 
     if (activeCategory !== "All") {
       filtered = filtered.filter((s) =>
@@ -805,7 +226,7 @@ export default function ZenDashboard() {
       );
     }
 
-    const groups: { [key: string]: { [key: string]: TravelSpot[] } } = {};
+    const groups: Record<string, Record<string, TravelSpot[]>> = {};
     filtered.forEach((spot) => {
       const country = spot.country || "Unknown";
       const city = spot.city || "Other";
@@ -824,14 +245,14 @@ export default function ZenDashboard() {
     );
   };
 
-  // 1. BOOTSTRAP: Load Auth and Spots
+  // Bootstrap auth + data
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
         fetchSpots(firebaseUser.uid);
+        tripsApi.fetchTrips(firebaseUser.uid);
 
-        // Ensure user doc exists and get telegram ID
         const userRef = doc(db, "users", firebaseUser.uid);
         const userSnap = await getDocs(
           query(collection(db, "users"), where("uid", "==", firebaseUser.uid)),
@@ -849,12 +270,14 @@ export default function ZenDashboard() {
       } else {
         setUser(null);
         setMasterSpots([]);
+        tripsApi.clearTrips();
         setIsBloomed(false);
         setDbStatus("Logged Out");
       }
     });
 
     return () => unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchSpots]);
 
   const generateLinkToken = async () => {
@@ -864,7 +287,11 @@ export default function ZenDashboard() {
     setLinkToken(token);
   };
 
-  const handleAuth = async (type: "login" | "signup") => {
+  const handleAuth = async (
+    type: "login" | "signup",
+    email: string,
+    password: string,
+  ) => {
     setAuthLoading(true);
     try {
       if (type === "signup") {
@@ -873,8 +300,8 @@ export default function ZenDashboard() {
         await signInWithEmailAndPassword(auth, email, password);
       }
       setIsAuthVisible(false);
-    } catch (error: any) {
-      alert(error.message);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : String(error));
     } finally {
       setAuthLoading(false);
     }
@@ -884,25 +311,18 @@ export default function ZenDashboard() {
     await signOut(auth);
   };
 
-  // 2. THE ANALYZER
   const handlePaste = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
 
-    // Check if it's a URL or just text
     const isUrl = inputValue.startsWith("http");
-
-    if (!isUrl) {
-      // If it's not a URL, we'll wait for them to pick a suggestion
-      // or we just pick the first one if they hit enter?
-      // For now, let's just trigger the search manually if needed
-      return;
-    }
+    if (!isUrl) return; // non-URLs resolve through the suggestion dropdown
 
     setIsAnalyzing(true);
     setIsBloomed(true);
     if (!isMobile) setSidebarVisible(true);
     setCurrentAnalysis([]);
+    setAnalysisFailure(null);
 
     try {
       const response = await fetch("/api/analyze", {
@@ -912,12 +332,12 @@ export default function ZenDashboard() {
       });
       const data = await response.json();
 
-      if (data.travel_spots) {
+      if (data.travel_spots && data.travel_spots.length > 0) {
         const proxiedThumbnail = data.thumbnail
           ? `/api/proxy?url=${encodeURIComponent(data.thumbnail)}`
           : null;
-        const newSpots = await Promise.all(
-          data.travel_spots.map(async (s: any) => {
+        const newSpots: TravelSpot[] = await Promise.all(
+          data.travel_spots.map(async (s: TravelSpot) => {
             let thumbnail = proxiedThumbnail;
 
             if (!thumbnail) {
@@ -927,14 +347,14 @@ export default function ZenDashboard() {
                 );
                 const imgData = await imgRes.json();
                 thumbnail = imgData.url;
-              } catch (e) {
-                console.error("Image fetch fail", e);
+              } catch (imgErr) {
+                console.error("Image fetch fail", imgErr);
               }
             }
 
             return {
               ...s,
-              thumbnail,
+              thumbnail: thumbnail || undefined,
               original_link: inputValue,
               is_favorite: false,
             };
@@ -943,7 +363,6 @@ export default function ZenDashboard() {
 
         setCurrentAnalysis(newSpots);
 
-        // Database save
         if (user) {
           for (const spot of newSpots) {
             await addDoc(collection(db, "spots"), {
@@ -956,43 +375,60 @@ export default function ZenDashboard() {
         } else {
           setMasterSpots((prev) => {
             const uniqueNew = newSpots.filter(
-              (ns: any) => !prev.some((ps) => ps.name === ns.name),
+              (ns) => !prev.some((ps) => ps.name === ns.name),
             );
             return [...uniqueNew, ...prev];
           });
         }
+      } else {
+        setAnalysisFailure(
+          FAILURE_MESSAGES[data.failure_reason as string] ||
+            data.error ||
+            FAILURE_MESSAGES.no_spots_found,
+        );
       }
-    } catch (error: any) {
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
       console.error("Analysis failed:", error);
-      setDbStatus(`Save Error: ${error.message}`);
+      setAnalysisFailure(FAILURE_MESSAGES.scrape_failed);
+      setDbStatus(`Save Error: ${msg}`);
     } finally {
       setIsAnalyzing(false);
     }
   };
 
-  const toggleFavorite = async (id: string, currentState: boolean) => {
-    if (user) {
-      const spotRef = doc(db, "spots", id);
-      await updateDoc(spotRef, { is_favorite: !currentState });
-      setMasterSpots((prev) =>
-        prev.map((s) =>
-          s.id === id ? { ...s, is_favorite: !currentState } : s,
-        ),
-      );
+  const toggleFavorite = async (spot: TravelSpot) => {
+    const next = !spot.is_favorite;
+    setMasterSpots((prev) =>
+      prev.map((s) => (s === spot ? { ...s, is_favorite: next } : s)),
+    );
+    if (user && spot.id) {
+      await updateDoc(doc(db, "spots", spot.id), { is_favorite: next });
     }
   };
 
-  const deleteSpot = async (id?: string, index?: number) => {
+  const toggleVisited = async (spot: TravelSpot) => {
+    const next: TravelSpot["status"] =
+      spot.status === "visited" ? "wishlist" : "visited";
+    setMasterSpots((prev) =>
+      prev.map((s) => (s === spot ? { ...s, status: next } : s)),
+    );
+    if (user && spot.id) {
+      await updateDoc(doc(db, "spots", spot.id), { status: next });
+    }
+  };
+
+  const deleteSpot = async (spot: TravelSpot, _index: number) => {
     if (!window.confirm("Delete this spot?")) return;
-    if (id && user) {
+    if (spot.id && user) {
       try {
-        await deleteDoc(doc(db, "spots", id));
-        setMasterSpots((prev) => prev.filter((s) => s.id !== id));
+        await deleteDoc(doc(db, "spots", spot.id));
+        setMasterSpots((prev) => prev.filter((s) => s.id !== spot.id));
       } catch (error) {
         console.error("Delete error:", error);
       }
     } else {
-      setMasterSpots((prev) => prev.filter((_, i) => i !== index));
+      setMasterSpots((prev) => prev.filter((s) => s !== spot));
     }
   };
 
@@ -1007,16 +443,20 @@ export default function ZenDashboard() {
         }
         setMasterSpots((prev) => prev.filter((s) => s.country !== country));
         setDbStatus(`Deleted ${country}`);
-      } catch (error: any) {
-        setDbStatus(`Error: ${error.message}`);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        setDbStatus(`Error: ${msg}`);
       }
+    } else {
+      setMasterSpots((prev) => prev.filter((s) => s.country !== country));
     }
   };
 
   const runOptimization = async (spotsToOptimize: TravelSpot[]) => {
     if (spotsToOptimize.length < 2) return;
     setIsOptimizing(true);
-    setRouteGeometry(null); // Reset previous route
+    setRouteGeometry(null);
+    setActiveTripDay(null);
     try {
       const coords = spotsToOptimize.map((s) => s.coordinates);
       const response = await fetch("/api/optimize", {
@@ -1037,281 +477,165 @@ export default function ZenDashboard() {
     }
   };
 
+  const routeDay = async (trip: Trip, day: TripDay, daySpots: TravelSpot[]) => {
+    if (daySpots.length < 2 || !trip.id) return;
+    await runOptimization(daySpots);
+    setActiveTripDay({ tripId: trip.id, dayId: day.id });
+  };
+
+  const clearRoute = () => {
+    setRouteGeometry(null);
+    setActiveTripDay(null);
+  };
+
+  const onSpotClick = (spot: TravelSpot) => {
+    if (spot.coordinates)
+      (
+        window as unknown as { flyToSpot?: (lng: number, lat: number) => void }
+      ).flyToSpot?.(...spot.coordinates);
+    if (isMobile) setSidebarVisible(false);
+  };
+
+  // When a trip day is being routed, the map shows only that day's spots so
+  // marker numbers match the itinerary order.
+  const mapSpots = useMemo(() => {
+    if (!activeTripDay) return masterSpots;
+    const trip = tripsApi.trips.find((t) => t.id === activeTripDay.tripId);
+    const day = trip?.days.find((d) => d.id === activeTripDay.dayId);
+    if (!day) return masterSpots;
+    const byId = new Map(masterSpots.filter((s) => s.id).map((s) => [s.id!, s]));
+    const daySpots = day.spot_ids
+      .map((id) => byId.get(id))
+      .filter((s): s is TravelSpot => !!s);
+    return daySpots.length > 0 ? daySpots : masterSpots;
+  }, [activeTripDay, masterSpots, tripsApi.trips]);
+
+  const drawerOpen =
+    isBloomed &&
+    (isAnalyzing || currentAnalysis.length > 0 || !!analysisFailure);
+
+  const sidebarUser = user
+    ? { uid: user.uid, email: user.email || "" }
+    : null;
+
+  const sidebarBody = (
+    <SidebarBody
+      inputValue={inputValue}
+      setInputValue={setInputValue}
+      handlePaste={handlePaste}
+      isAnalyzing={isAnalyzing}
+      isSearching={isSearching}
+      isFocused={isFocused}
+      setIsFocused={setIsFocused}
+      suggestions={suggestions}
+      handleSearchSelect={handleSearchSelect}
+      view={sidebarView}
+      setView={setSidebarView}
+      isMobile={isMobile}
+      onCloseSidebar={() => setSidebarVisible(false)}
+      masterSpots={masterSpots}
+      groupedSpots={groupedSpots}
+      expandedFolders={expandedFolders}
+      toggleFolder={toggleFolder}
+      activeFilter={activeFilter}
+      setActiveFilter={setActiveFilter}
+      activeCategory={activeCategory}
+      setActiveCategory={setActiveCategory}
+      onSpotClick={onSpotClick}
+      toggleFavorite={toggleFavorite}
+      toggleVisited={toggleVisited}
+      deleteSpot={deleteSpot}
+      deleteFolder={deleteFolder}
+      routeGeometry={routeGeometry}
+      clearRoute={clearRoute}
+      runOptimization={runOptimization}
+      isOptimizing={isOptimizing}
+      tripsApi={tripsApi}
+      onRouteDay={routeDay}
+      onRequestLogin={() => setIsAuthVisible(true)}
+      user={sidebarUser}
+      dbStatus={dbStatus}
+      telegramId={telegramId}
+      linkToken={linkToken}
+      copied={copied}
+      setCopied={setCopied}
+      generateLinkToken={generateLinkToken}
+      openShortcutInstructions={() => setShowShortcutInstructions(true)}
+      fetchSpots={fetchSpots}
+    />
+  );
+
   return (
     <div className="fixed inset-0 bg-black text-white font-sans selection:bg-white selection:text-black overflow-hidden touch-none">
       {/* 1. MAP FLOOR (Z-0) */}
       <div
         className={cn(
           "absolute inset-0 z-0 transition-all duration-[2000ms] ease-in-out touch-auto",
-          isBloomed
-            ? "opacity-100 scale-100"
-            : "opacity-20 scale-110 grayscale",
+          isBloomed ? "opacity-100 scale-100" : "opacity-20 scale-110 grayscale",
         )}
       >
         <MapComponent
-          spots={masterSpots}
+          spots={mapSpots}
           routeGeometry={routeGeometry}
           mapStyle={mapStyle}
         />
         <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-black/60 via-transparent to-black/60" />
       </div>
 
-      {/* 2. AUTH MODAL (Z-[200]) */}
+      {/* 2. MODALS (Z-200) */}
       <AnimatePresence>
         {showShortcutInstructions && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 md:p-6"
-          >
-            <motion.div
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              className="bg-[#0a0a0a] border border-[#262626] p-6 md:p-10 rounded-[32px] md:rounded-[40px] w-full max-w-xl shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar"
-            >
-              <button
-                onClick={() => setShowShortcutInstructions(false)}
-                className="absolute top-6 right-6 text-[#404040] hover:text-white transition-colors p-2 cursor-pointer"
-              >
-                <X className="w-6 h-6" />
-              </button>
-              <h2 className="text-2xl font-black tracking-tighter mb-2 italic uppercase">
-                iOS Shortcut Setup
-              </h2>
-              <p className="text-[10px] text-[#737373] font-bold uppercase tracking-widest mb-8">
-                Fast-sync from Instagram / TikTok
-              </p>
-
-              <div className="space-y-8">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-black">
-                      1
-                    </div>
-                    <p className="text-xs font-black uppercase text-white/80">
-                      Create Shortcut
-                    </p>
-                  </div>
-                  <p className="text-[11px] text-[#525252] leading-relaxed pl-9">
-                    Open the <b>Shortcuts</b> app on your iPhone and create a
-                    new shortcut named <b>"Sync to Voyge"</b>. Enable{" "}
-                    <b>"Show in Share Sheet"</b> in the settings.
-                  </p>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-black">
-                      2
-                    </div>
-                    <p className="text-xs font-black uppercase text-white/80">
-                      Add "Get Contents of URL"
-                    </p>
-                  </div>
-                  <div className="pl-9 space-y-4">
-                    <div className="space-y-2">
-                      <p className="text-[10px] text-[#404040] uppercase font-black">
-                        URL
-                      </p>
-                      <div className="flex items-center justify-between bg-black rounded-xl p-3 border border-white/5">
-                        <code className="text-[10px] text-white break-all">
-                          https://voyge-studio.vercel.app/api/telegram
-                        </code>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-[10px] text-[#404040] uppercase font-black">
-                        Method & Headers
-                      </p>
-                      <p className="text-[10px] text-[#525252]">
-                        Set Method to <b>POST</b>. Add header{" "}
-                        <b>Content-Type: application/json</b>
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-black">
-                      3
-                    </div>
-                    <p className="text-xs font-black uppercase text-white/80">
-                      Request Body (JSON)
-                    </p>
-                  </div>
-                  <div className="pl-9 space-y-4">
-                    <p className="text-[11px] text-[#525252] leading-relaxed">
-                      1. Add a <b>"Text"</b> action above the URL block.
-                      <br />
-                      2. Paste the JSON below into it (Replace{" "}
-                      <code>SHORTCUT_INPUT</code> with the <b>Shortcut Input</b>{" "}
-                      variable).
-                      <br />
-                      3. In the URL block, set <b>Request Body</b> to{" "}
-                      <b>File</b> and select that <b>"Text"</b> box.
-                    </p>
-                    <div className="relative group">
-                      <pre className="bg-black rounded-2xl p-4 border border-white/10 text-[10px] text-white/60 overflow-x-auto">
-                        {`{
-  "message": {
-    "text": "SHORTCUT_INPUT",
-    "chat": { "id": ${telegramId} },
-    "from": { "id": ${telegramId} }
-  }
-}`}
-                      </pre>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setShowShortcutInstructions(false)}
-                className="w-full mt-10 bg-white/5 border border-white/10 text-white py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-white/10 transition-all"
-              >
-                Done
-              </button>
-            </motion.div>
-          </motion.div>
+          <ShortcutModal
+            open
+            onClose={() => setShowShortcutInstructions(false)}
+            telegramId={telegramId}
+          />
         )}
-
         {isAuthVisible && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-6"
-          >
-            <motion.div
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              className="bg-[#0a0a0a] border border-[#262626] p-10 rounded-[40px] w-full max-w-md shadow-2xl relative"
-            >
-              <button
-                onClick={() => setIsAuthVisible(false)}
-                className="absolute top-6 right-6 text-[#404040] hover:text-white transition-colors p-2 cursor-pointer"
-              >
-                <X className="w-6 h-6" />
-              </button>
-              <h2 className="text-2xl md:text-3xl font-black tracking-tighter mb-2 italic uppercase">
-                Voyge Access
-              </h2>
-              <p className="text-[10px] md:text-xs text-[#737373] font-bold uppercase tracking-widest mb-8">
-                Synchronize your master map
-              </p>
-              <div className="space-y-4">
-                <input
-                  type="email"
-                  placeholder="Email Address"
-                  className="w-full bg-black border border-[#262626] rounded-2xl px-5 py-4 text-sm font-bold placeholder-[#404040] outline-none focus:border-white/20 transition-all text-white"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-                <input
-                  type="password"
-                  placeholder="Password"
-                  className="w-full bg-black border border-[#262626] rounded-2xl px-5 py-4 text-sm font-bold placeholder-[#404040] outline-none focus:border-white/20 transition-all text-white"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-                <div className="grid grid-cols-2 gap-4 pt-4">
-                  <button
-                    onClick={() => handleAuth("login")}
-                    disabled={authLoading}
-                    className="bg-white text-black py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-[1.02] active:scale-95 transition-all cursor-pointer"
-                  >
-                    {authLoading ? "Checking..." : "Sign In"}
-                  </button>
-                  <button
-                    onClick={() => handleAuth("signup")}
-                    disabled={authLoading}
-                    className="bg-white/5 border border-white/10 text-white py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-white/10 transition-all cursor-pointer"
-                  >
-                    Create
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
+          <AuthModal
+            open
+            onClose={() => setIsAuthVisible(false)}
+            onAuth={handleAuth}
+            loading={authLoading}
+          />
         )}
       </AnimatePresence>
 
-      {/* 3. TOP NAV (Z-[150]) */}
-      <div className="fixed top-4 md:top-8 right-4 md:right-8 z-[150] flex items-center gap-4 pointer-events-none">
+      {/* 3. TOP NAV (Z-150) */}
+      <div className="fixed top-[calc(env(safe-area-inset-top)+1rem)] md:top-8 right-4 md:right-8 z-[150] flex items-center gap-4 pointer-events-none">
         {user ? (
-          <div className="flex items-center gap-3 bg-black/40 backdrop-blur-xl border border-white/5 pl-2 pr-4 py-2 rounded-2xl shadow-2xl pointer-events-auto mt-16 md:mt-0">
+          <div className="flex items-center gap-3 glass specular pl-2 pr-4 py-2 rounded-2xl pointer-events-auto">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-white/10 to-white/5 flex items-center justify-center border border-white/10 text-[10px] font-black italic text-white/80">
-              {user.email?.[0].toUpperCase()}
+              {user.email?.[0]?.toUpperCase()}
             </div>
-            {!isMobile && (
-              <p className="text-[10px] font-black text-[#737373] uppercase tracking-widest truncate max-w-[100px]">
-                {user.email.split("@")[0]}
-              </p>
-            )}
+            <p className="hidden md:block text-[10px] font-black text-mist uppercase tracking-widest truncate max-w-[100px]">
+              {user.email?.split("@")[0]}
+            </p>
             <button
               onClick={handleLogout}
-              className="text-[9px] font-black text-red-500/50 hover:text-red-500 uppercase tracking-tighter transition-colors px-2 py-1 cursor-pointer"
+              className="text-[9px] font-black text-red-500/50 hover:text-red-500 uppercase tracking-tighter transition-colors px-2 py-2 cursor-pointer"
             >
               Out
             </button>
           </div>
         ) : (
           <button
+            aria-label="Sign in"
             onClick={() => setIsAuthVisible(true)}
-            className="flex items-center justify-center bg-white/5 hover:bg-white/10 text-[#737373] hover:text-white w-10 md:w-12 h-10 md:h-12 rounded-2xl border border-white/5 transition-all group shadow-2xl pointer-events-auto cursor-pointer mt-16 md:mt-0"
+            className="flex items-center justify-center glass specular text-mist hover:text-white w-11 md:w-12 h-11 md:h-12 rounded-2xl transition-all pointer-events-auto cursor-pointer"
           >
             <LogIn className="w-5 h-5" />
           </button>
         )}
       </div>
 
-      {/* 4. SIDEBAR / BOTTOM SHEET (Z-[100]) */}
+      {/* 4. SIDEBAR / BOTTOM SHEET (Z-100) */}
       {isMobile ? (
         <BottomSheet
           isOpen={isBloomed && sidebarVisible}
           onClose={() => setSidebarVisible(false)}
-          title="My Spots"
         >
-          <SidebarContent
-            masterSpots={masterSpots}
-            routeGeometry={routeGeometry}
-            setRouteGeometry={setRouteGeometry}
-            activeFilter={activeFilter}
-            setActiveFilter={setActiveFilter}
-            groupedSpots={groupedSpots}
-            toggleFolder={toggleFolder}
-            expandedFolders={expandedFolders}
-            runOptimization={runOptimization}
-            isOptimizing={isOptimizing}
-            deleteFolder={deleteFolder}
-            toggleFavorite={toggleFavorite}
-            deleteSpot={deleteSpot}
-            user={user}
-            telegramId={telegramId}
-            setShowShortcutInstructions={setShowShortcutInstructions}
-            generateLinkToken={generateLinkToken}
-            linkToken={linkToken}
-            copied={copied}
-            setCopied={setCopied}
-            fetchSpots={fetchSpots}
-            dbStatus={dbStatus}
-            isMobile={isMobile}
-            setSidebarVisible={setSidebarVisible}
-            activeCategory={activeCategory}
-            setActiveCategory={setActiveCategory}
-            inputValue={inputValue}
-            setInputValue={setInputValue}
-            handlePaste={handlePaste}
-            isAnalyzing={isAnalyzing}
-            isBloomed={isBloomed}
-            isFocused={isFocused}
-            setIsFocused={setIsFocused}
-            suggestions={suggestions}
-            handleSearchSelect={handleSearchSelect}
-            isSearching={isSearching}
-          />
+          {sidebarBody}
         </BottomSheet>
       ) : (
         <AnimatePresence>
@@ -1321,224 +645,53 @@ export default function ZenDashboard() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -400, opacity: 0 }}
               transition={{ type: "spring", damping: 30, stiffness: 120 }}
-              className="fixed left-0 top-0 bottom-0 bg-[#000] border-r border-white/5 z-[100] flex flex-col px-4 pt-4 pb-2 overflow-hidden shadow-[40px_0_120px_rgba(0,0,0,0.9)] pointer-events-auto w-[400px]"
+              className="fixed left-0 top-0 bottom-0 glass-deep border-r border-white/5 z-[100] flex flex-col px-4 pt-4 pb-2 overflow-hidden shadow-[40px_0_120px_rgba(0,0,0,0.9)] pointer-events-auto w-sidebar rounded-none"
             >
               <button
+                aria-label="Hide sidebar"
                 onClick={(e) => {
                   e.stopPropagation();
                   setSidebarVisible(false);
                 }}
-                className="absolute -right-4 top-1/2 -translate-y-1/2 w-8 h-14 bg-[#171717] border border-white/10 rounded-full flex items-center justify-center text-[#737373] hover:text-white transition-all shadow-2xl z-[110] cursor-pointer"
+                className="absolute -right-4 top-1/2 -translate-y-1/2 w-8 h-14 glass-deep rounded-full flex items-center justify-center text-mist hover:text-white transition-all shadow-2xl z-[110] cursor-pointer"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
-
-              <SidebarContent
-                masterSpots={masterSpots}
-                routeGeometry={routeGeometry}
-                setRouteGeometry={setRouteGeometry}
-                activeFilter={activeFilter}
-                setActiveFilter={setActiveFilter}
-                groupedSpots={groupedSpots}
-                toggleFolder={toggleFolder}
-                expandedFolders={expandedFolders}
-                runOptimization={runOptimization}
-                isOptimizing={isOptimizing}
-                deleteFolder={deleteFolder}
-                toggleFavorite={toggleFavorite}
-                deleteSpot={deleteSpot}
-                user={user}
-                telegramId={telegramId}
-                setShowShortcutInstructions={setShowShortcutInstructions}
-                generateLinkToken={generateLinkToken}
-                linkToken={linkToken}
-                copied={copied}
-                setCopied={setCopied}
-                fetchSpots={fetchSpots}
-                dbStatus={dbStatus}
-                isMobile={isMobile}
-                setSidebarVisible={setSidebarVisible}
-                activeCategory={activeCategory}
-                setActiveCategory={setActiveCategory}
-                inputValue={inputValue}
-                setInputValue={setInputValue}
-                handlePaste={handlePaste}
-                isAnalyzing={isAnalyzing}
-                isBloomed={isBloomed}
-                isFocused={isFocused}
-                setIsFocused={setIsFocused}
-                suggestions={suggestions}
-                handleSearchSelect={handleSearchSelect}
-                isSearching={isSearching}
-              />
+              {sidebarBody}
             </motion.aside>
           )}
         </AnimatePresence>
       )}
 
-      {/* 5. MINIMIZED TRIGGER / FLOATING NAV (Z-[150]) */}
-      <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[150] flex items-center gap-2 pointer-events-none">
-        <AnimatePresence>
-          {isBloomed && (
-            <div className="relative">
-              {/* POPOVER MENU */}
-              <AnimatePresence>
-                {isMenuOpen && (
-                  <motion.div
-                    initial={{ y: 20, opacity: 0, scale: 0.9 }}
-                    animate={{ y: 0, opacity: 1, scale: 1 }}
-                    exit={{ y: 20, opacity: 0, scale: 0.9 }}
-                    className="absolute bottom-[100px] left-1/2 -translate-x-1/2 w-64 bg-[#0a0a0a] border border-white/10 rounded-[32px] p-2 shadow-2xl pointer-events-auto overflow-hidden"
-                  >
-                    <button
-                      onClick={() => {
-                        setIsMenuOpen(false);
-                        runOptimization(masterSpots);
-                      }}
-                      className="w-full flex items-center gap-4 p-4 hover:bg-white/5 transition-colors text-left group"
-                    >
-                      <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center border border-white/5 group-hover:bg-white/10">
-                        <Briefcase className="w-5 h-5 text-pink-500" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-black uppercase tracking-widest text-white">
-                          Create New Trip
-                        </p>
-                        <p className="text-[9px] text-[#525252] font-bold">
-                          Plan your next adventure
-                        </p>
-                      </div>
-                    </button>
-                    <div className="h-px bg-white/5 mx-2" />
-                    <button
-                      onClick={() => {
-                        setIsMenuOpen(false);
-                        setSidebarVisible(true);
-                      }}
-                      className="w-full flex items-center gap-4 p-4 hover:bg-white/5 transition-colors text-left group"
-                    >
-                      <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center border border-white/5 group-hover:bg-white/10">
-                        <MapPin className="w-5 h-5 text-yellow-500" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-black uppercase tracking-widest text-white">
-                          Add Spots
-                        </p>
-                        <p className="text-[9px] text-[#525252] font-bold">
-                          Save places you love
-                        </p>
-                      </div>
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+      {/* 5. FLOATING NAV DOCK (Z-150) — hidden on phones while the drawer or
+          sheet is up so nothing stacks in the same corner */}
+      <NavDock
+        visible={isBloomed && !(isMobile && (drawerOpen || sidebarVisible))}
+        mapStyle={mapStyle}
+        onMapStyle={setMapStyle}
+        sidebarVisible={sidebarVisible}
+        activeFilter={activeFilter}
+        onOpenSpots={() => {
+          setSidebarVisible(true);
+          setSidebarView("spots");
+          setActiveFilter("all");
+        }}
+        onOpenFavorites={() => {
+          setSidebarVisible(true);
+          setSidebarView("spots");
+          setActiveFilter("favorites");
+        }}
+        onNewTrip={() => {
+          setSidebarVisible(true);
+          setSidebarView("trips");
+        }}
+      />
 
-              <motion.div
-                initial={{ y: 100, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                className="flex items-center gap-3 bg-black/60 backdrop-blur-3xl border border-white/10 p-2 rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.5)] pointer-events-auto"
-              >
-                <button
-                  onClick={() => {
-                    setSidebarVisible(true);
-                    setActiveFilter("all");
-                    setIsMenuOpen(false);
-                  }}
-                  className={cn(
-                    "w-12 h-12 rounded-[24px] flex items-center justify-center transition-all",
-                    sidebarVisible && activeFilter === "all"
-                      ? "bg-white text-black"
-                      : "text-white/40 hover:text-white",
-                  )}
-                >
-                  <MapIcon className="w-5 h-5" />
-                </button>
-
-                {/* Map style toggle — cycles dark → satellite → outdoors */}
-                <div className="flex items-center gap-0.5 bg-white/5 rounded-[20px] p-1">
-                  {(
-                    [
-                      {
-                        mode: "dark" as MapStyleMode,
-                        label: "Dark",
-                        emoji: "🌑",
-                      },
-                      {
-                        mode: "satellite" as MapStyleMode,
-                        label: "Sat",
-                        emoji: "🛰",
-                      },
-                      {
-                        mode: "outdoors" as MapStyleMode,
-                        label: "Topo",
-                        emoji: "🏔",
-                      },
-                    ] as { mode: MapStyleMode; label: string; emoji: string }[]
-                  ).map(({ mode, label, emoji }) => (
-                    <button
-                      key={mode}
-                      onClick={() => setMapStyle(mode)}
-                      title={label}
-                      className={cn(
-                        "h-9 px-3 rounded-[16px] flex items-center gap-1.5 transition-all text-[10px] font-black uppercase tracking-widest",
-                        mapStyle === mode
-                          ? "bg-white text-black shadow-md"
-                          : "text-white/30 hover:text-white/70",
-                      )}
-                    >
-                      <span className="text-sm leading-none">{emoji}</span>
-                      <span className="hidden sm:inline">{label}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="relative">
-                  <button
-                    onClick={() => {
-                      if (!isBloomed) return;
-                      setIsMenuOpen(!isMenuOpen);
-                    }}
-                    className={cn(
-                      "w-16 h-16 rounded-[28px] flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.3)] hover:scale-110 active:scale-90 transition-all group",
-                      isMenuOpen
-                        ? "bg-black text-white border border-white/20"
-                        : "bg-white text-black",
-                    )}
-                  >
-                    {isMenuOpen ? (
-                      <X className="w-7 h-7" />
-                    ) : (
-                      <Plus className="w-7 h-7 stroke-[3px] group-hover:rotate-90 transition-transform" />
-                    )}
-                  </button>
-                </div>
-
-                <button
-                  onClick={() => {
-                    setSidebarVisible(true);
-                    setActiveFilter("favorites");
-                    setIsMenuOpen(false);
-                  }}
-                  className={cn(
-                    "w-12 h-12 rounded-[24px] flex items-center justify-center transition-all",
-                    sidebarVisible && activeFilter === "favorites"
-                      ? "bg-white text-black"
-                      : "text-white/40 hover:text-white",
-                  )}
-                >
-                  <Heart className="w-5 h-5" />
-                </button>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* 6. MAIN CONTENT (Z-10) */}
+      {/* 6. HERO CONTENT (Z-10) */}
       <div
         className={cn(
           "fixed inset-0 z-10 flex flex-col items-center justify-center transition-all duration-[1000ms] pointer-events-none px-4",
-          isBloomed && sidebarVisible && !isMobile ? "pl-80" : "pl-0",
+          isBloomed && sidebarVisible && !isMobile ? "md:pl-sidebar" : "pl-0",
         )}
       >
         <div className="w-full max-w-2xl flex flex-col items-center gap-8 md:gap-12">
@@ -1550,13 +703,13 @@ export default function ZenDashboard() {
                 exit={{ opacity: 0, y: -20 }}
                 className="text-center"
               >
-                <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/5 border border-white/10 rounded-full text-[8px] md:text-[10px] font-black uppercase tracking-[0.4em] mb-6 md:mb-8 text-white/40 shadow-2xl">
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 glass rounded-full text-[8px] md:text-[10px] font-black uppercase tracking-[0.4em] mb-6 md:mb-8 text-white/40">
                   <Sparkles className="w-3 h-3 text-white/60" /> Next-Gen Travel
                 </div>
                 <h1 className="text-[60px] md:text-[120px] leading-[0.8] font-black tracking-tighter mb-6 md:mb-8 bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-white/10">
                   VOYGE
                 </h1>
-                <p className="text-[#525252] text-lg md:text-xl max-w-lg mx-auto leading-relaxed font-bold tracking-tight italic">
+                <p className="text-steel text-lg md:text-xl max-w-lg mx-auto leading-relaxed font-bold tracking-tight italic">
                   Your social media saves,{" "}
                   <span className="text-white not-italic">
                     mathematically perfected.
@@ -1566,214 +719,43 @@ export default function ZenDashboard() {
             )}
           </AnimatePresence>
 
-          {/* SEARCH BAR */}
           <AnimatePresence>
             {!isBloomed && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="w-full relative group pointer-events-auto"
+                className="w-full relative pointer-events-auto"
               >
-                <div
-                  className={cn(
-                    "absolute -inset-[3px] bg-gradient-to-r from-white/0 via-white/30 to-white/0 rounded-[32px] blur-2xl opacity-0 transition-all duration-1000",
-                    isFocused && "opacity-100 scale-105",
-                  )}
+                <SearchBar
+                  variant="hero"
+                  value={inputValue}
+                  onChange={setInputValue}
+                  onSubmit={handlePaste}
+                  isAnalyzing={isAnalyzing}
+                  isSearching={isSearching}
+                  isFocused={isFocused}
+                  onFocusChange={setIsFocused}
+                  suggestions={suggestions}
+                  onSelect={handleSearchSelect}
                 />
-                <div className="relative bg-black/60 backdrop-blur-3xl border border-white/10 rounded-3xl md:rounded-[32px] flex items-center px-4 md:px-8 py-4 md:py-6 gap-3 md:gap-6 transition-all duration-500 hover:border-white/20 shadow-[0_50px_150px_rgba(0,0,0,1)]">
-                  {isSearching ? (
-                    <Loader2 className="w-5 md:w-7 h-5 md:h-7 text-white animate-spin" />
-                  ) : (
-                    <Search
-                      className={cn(
-                        "w-5 md:w-7 h-5 md:h-7 transition-all duration-700 hidden sm:block",
-                        isFocused ? "text-white rotate-180" : "text-[#404040]",
-                      )}
-                    />
-                  )}
-                  <input
-                    type="text"
-                    placeholder={
-                      isMobile
-                        ? "Add link or search..."
-                        : "Paste Instagram/TikTok link or search a place..."
-                    }
-                    className="bg-transparent border-none outline-none flex-1 text-sm md:text-lg placeholder-[#404040] font-black tracking-tighter text-white"
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    onFocus={() => setIsFocused(true)}
-                    onBlur={() => setTimeout(() => setIsFocused(false), 200)}
-                  />
-                  <button
-                    onClick={handlePaste}
-                    className="bg-white text-black px-6 md:px-10 py-2.5 md:py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[11px] font-black hover:scale-105 transition-all active:scale-95 disabled:opacity-20 uppercase tracking-[0.2em] shadow-xl cursor-pointer"
-                    disabled={isAnalyzing}
-                  >
-                    {isAnalyzing ? "..." : "Launch"}
-                  </button>
-                </div>
-
-                {/* Suggestions Dropdown for Launch View */}
-                <AnimatePresence>
-                  {isFocused && suggestions.length > 0 && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 10 }}
-                      className="absolute top-full left-0 right-0 mt-4 bg-[#0a0a0a] border border-white/10 rounded-[32px] overflow-hidden z-[200] shadow-2xl"
-                    >
-                      {suggestions.map((s: any, i: number) => (
-                        <button
-                          key={i}
-                          onClick={() => handleSearchSelect(s)}
-                          className="w-full flex items-center justify-between p-6 text-left hover:bg-white/5 transition-colors border-b border-white/5 last:border-none group"
-                        >
-                          <div>
-                            <p className="text-lg font-black text-white group-hover:text-white transition-colors">
-                              {s.name}
-                            </p>
-                            <p className="text-[10px] text-[#525252] font-bold uppercase tracking-widest">
-                              {s.city}, {s.country}
-                            </p>
-                          </div>
-                          <ChevronRight className="w-5 h-5 text-white/10 group-hover:text-white transition-all group-hover:translate-x-1" />
-                        </button>
-                      ))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
-
-        {/* 7. INTELLIGENCE DRAWER (Z-150) */}
-        <AnimatePresence>
-          {isBloomed && currentAnalysis.length > 0 && (
-            <motion.div
-              initial={{ y: 50, opacity: 0, scale: 0.9 }}
-              animate={{ y: 0, opacity: 1, scale: 1 }}
-              exit={{ y: 50, opacity: 0, scale: 0.9 }}
-              className="fixed inset-x-4 bottom-4 md:right-12 md:bottom-12 md:left-auto z-[150] pointer-events-auto"
-            >
-              <div className="bg-[#000]/80 backdrop-blur-3xl border border-white/10 p-6 md:p-10 rounded-[32px] md:rounded-[48px] md:w-[480px] shadow-[0_80px_150px_-20px_rgba(0,0,0,0.8)] flex flex-col gap-6 md:gap-8">
-                {isAnalyzing ? (
-                  <div className="space-y-6 md:space-y-8 py-6 md:py-10 text-center">
-                    <div className="relative w-16 md:w-24 h-16 md:h-24 mx-auto">
-                      <motion.div
-                        animate={{ rotate: 360 }}
-                        transition={{
-                          repeat: Infinity,
-                          duration: 3,
-                          ease: "linear",
-                        }}
-                        className="absolute inset-0 border-[3px] border-dashed border-white/10 rounded-full"
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <Sparkles className="w-6 md:w-10 h-6 md:h-10 text-white animate-pulse" />
-                      </div>
-                    </div>
-                    <div>
-                      <h3 className="text-xl md:text-2xl font-black tracking-tighter uppercase italic text-white">
-                        Voyge Intelligence
-                      </h3>
-                      <p className="text-[10px] text-[#525252] font-black uppercase tracking-[0.3em] mt-3">
-                        Synthesizing Location Data
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-3 h-3 rounded-full bg-green-500 shadow-[0_0_20px_rgba(34,197,94,1)] animate-pulse" />
-                        <h3 className="font-black text-[10px] md:text-[11px] uppercase tracking-[0.4em] text-white/40">
-                          Latest Discoveries
-                        </h3>
-                      </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCurrentAnalysis([]);
-                        }}
-                        className="bg-white/5 p-2 md:p-3 rounded-xl md:rounded-2xl text-[#737373] hover:text-white transition-all hover:bg-white/10 cursor-pointer pointer-events-auto"
-                      >
-                        <X className="w-5 h-5" />
-                      </button>
-                    </div>
-                    <div className="flex flex-col gap-4 md:gap-5 max-h-[300px] md:max-h-[400px] overflow-y-auto pr-2 md:pr-4 custom-scrollbar pointer-events-auto">
-                      {currentAnalysis.map((spot, i) => (
-                        <motion.div
-                          key={i}
-                          initial={{ opacity: 0, x: 30 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{
-                            delay: i * 0.1,
-                            type: "spring",
-                            damping: 15,
-                          }}
-                          className="group flex gap-4 md:gap-6 p-4 md:p-6 rounded-[24px] md:rounded-[32px] bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.05] hover:border-white/10 transition-all cursor-pointer shadow-2xl relative overflow-hidden pointer-events-auto"
-                        >
-                          <div className="w-16 md:w-20 h-16 md:h-20 rounded-[16px] md:rounded-[24px] bg-black flex-shrink-0 overflow-hidden border border-white/10 relative group-hover:scale-110 transition-transform duration-700">
-                            {spot.thumbnail ? (
-                              <img
-                                src={spot.thumbnail}
-                                className="w-full h-full object-cover grayscale opacity-40 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-1000"
-                              />
-                            ) : (
-                              <MapPin className="w-full h-full p-4 md:p-6 text-[#262626]" />
-                            )}
-                            <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
-                          </div>
-                          <div className="flex-1 min-w-0 flex flex-col justify-center pointer-events-none">
-                            <h4 className="text-lg md:text-xl font-black truncate tracking-tighter group-hover:text-white text-white">
-                              {spot.name}
-                            </h4>
-                            <div className="flex items-center gap-2 md:gap-3 mt-1">
-                              <span className="text-sm">
-                                {getCountryFlag(spot.country)}
-                              </span>
-                              <p className="text-[10px] md:text-[11px] text-[#525252] font-black uppercase tracking-tighter">
-                                {spot.city}
-                              </p>
-                              <span className="w-1 h-1 bg-white/10 rounded-full" />
-                              <p className="text-[10px] md:text-[11px] text-white/40 font-black uppercase tracking-tighter">
-                                {spot.category}
-                              </p>
-                            </div>
-                            {spot.description && (
-                              <p className="text-[10px] text-[#404040] mt-2 line-clamp-2 group-hover:text-white/40 transition-colors italic leading-relaxed">
-                                {spot.description}
-                              </p>
-                            )}
-                          </div>
-                        </motion.div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
 
-      <style jsx global>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.05);
-          border-radius: 20px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.1);
-        }
-      `}</style>
+      {/* 7. INTELLIGENCE DRAWER (Z-150) */}
+      <IntelligenceDrawer
+        open={drawerOpen}
+        isAnalyzing={isAnalyzing}
+        spots={currentAnalysis}
+        failureMessage={analysisFailure}
+        onClose={() => {
+          setCurrentAnalysis([]);
+          setAnalysisFailure(null);
+        }}
+      />
     </div>
   );
 }

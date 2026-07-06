@@ -8,7 +8,7 @@
  * ## Behaviour
  *
  * - **Entry animation** — The sheet slides up from `y: "100%"` (fully
- *   off-screen) to `y: "10%"` (90 % of viewport height visible), using a
+ *   off-screen) to `y: 0` (fully visible, capped at 85dvh), using a
  *   spring animation (`damping: 25, stiffness: 200`).
  * - **Exit animation** — Slides back down to `y: "100%"` when dismissed.
  * - **Backdrop** — A semi-transparent black backdrop (`bg-black/60`) with
@@ -105,10 +105,11 @@ export default function BottomSheet({
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]"
           />
 
-          {/* Sheet */}
+          {/* Sheet — animates fully into view (y: 0); previously it rested at
+              y: "10%" which pushed the bottom tenth of the content offscreen */}
           <motion.div
             initial={{ y: "100%" }}
-            animate={{ y: "10%" }}
+            animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 25, stiffness: 200 }}
             drag="y"
@@ -119,7 +120,7 @@ export default function BottomSheet({
                 onClose();
               }
             }}
-            className="fixed inset-x-0 bottom-0 z-[110] bg-[#0a0a0a] border-t border-white/10 rounded-t-[32px] shadow-[0_-20px_100px_rgba(0,0,0,0.8)] flex flex-col max-h-[90vh]"
+            className="fixed inset-x-0 bottom-0 z-[110] glass-deep rounded-t-sheet shadow-[0_-20px_100px_rgba(0,0,0,0.8)] flex flex-col max-h-[85dvh]"
           >
             {/* Handle */}
             <div className="w-full flex justify-center py-4 cursor-grab active:cursor-grabbing">
@@ -133,8 +134,9 @@ export default function BottomSheet({
                   {title}
                 </h2>
                 <button
+                  aria-label="Close"
                   onClick={onClose}
-                  className="p-2 text-[#404040] hover:text-white transition-colors"
+                  className="p-2 text-fog hover:text-white transition-colors cursor-pointer"
                 >
                   <X className="w-6 h-6" />
                 </button>
@@ -142,7 +144,7 @@ export default function BottomSheet({
             )}
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-10">
+            <div className="flex-1 overflow-y-auto custom-scrollbar px-4 pb-safe-4 flex flex-col">
               {children}
             </div>
           </motion.div>
