@@ -1,0 +1,36 @@
+# Mirrors every push on this GitHub repo to the GitLab repo that Vercel
+# deploys from (gitlab.com/jip9e/VOYGE-studio). GitHub is the source of
+# truth: each pushed branch is force-pushed to the same branch on GitLab.
+#
+# Requires a repository secret named GITLAB_TOKEN — a GitLab Personal
+# Access Token with the `write_repository` scope.
+name: Mirror to GitLab
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push branch to GitLab
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: |
+          if [ -z "$GITLAB_TOKEN" ]; then
+            echo "::error::GITLAB_TOKEN secret is not set — add it in Settings > Secrets and variables > Actions"
+            exit 1
+          fi
+          git push --force \
+            "https://oauth2:${GITLAB_TOKEN}@gitlab.com/jip9e/VOYGE-studio.git" \
+            "HEAD:refs/heads/${GITHUB_REF_NAME}"
