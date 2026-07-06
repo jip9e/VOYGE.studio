@@ -96,7 +96,6 @@
  */
 
 import axios from "axios";
-import type { AxiosResponse } from "axios";
 import { extractPlaceFromText } from "@/lib/location/extractor";
 
 // ─── Location Pre-Processor ───────────────────────────────────────────────────
@@ -790,6 +789,86 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+/**
+ * Retry a request once (default) on transient failures only —
+ * HTTP 429 / 5xx, timeouts, and network errors. Everything else rethrows
+ * immediately so hard failures (401/404) don't burn extra quota.
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  retries = 1,
+  delayMs = 800,
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (e: any) {
+      lastErr = e;
+      const status = e?.response?.status;
+      const retryable =
+        status === 429 ||
+        (status >= 500 && status < 600) ||
+        e?.code === "ECONNABORTED" ||
+        e?.code === "ETIMEDOUT" ||
+        !status;
+      if (!retryable || attempt === retries) throw e;
+      console.warn(
+        `[${label}] transient failure (${status || e?.code || e?.message}) — retrying in ${delayMs}ms`,
+      );
+      await sleep(delayMs);
+    }
+  }
+  throw lastErr;
+}
+
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/gi, "'")
+    .replace(/&#x2f;/gi, "/")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
+}
+
+function stripHtmlTags(s: string): string {
+  return s
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+}
+
+/**
+ * instagram.com/share/... links carry an opaque token that 302-redirects to
+ * the real /reel/ or /p/ URL. Follow the redirects and return the final URL.
+ */
+async function resolveInstagramShareUrl(
+  shareUrl: string,
+): Promise<string | null> {
+  try {
+    const res = await axios.get(shareUrl, {
+      maxRedirects: 5,
+      timeout: 8000,
+      validateStatus: () => true,
+      headers: { "User-Agent": BROWSER_UA },
+    });
+    const finalUrl: string | undefined =
+      res.request?.res?.responseUrl || res.request?.responseURL;
+    if (finalUrl && /\/(?:reel|reels|p|tv)\//.test(finalUrl)) return finalUrl;
+    return null;
+  } catch (e: any) {
+    console.warn("[IG] /share/ URL resolve failed:", e.message);
+    return null;
+  }
+}
+
 // ─── INSTAGRAM ───────────────────────────────────────────────────────────────
 
 export async function scrapeInstagram(url: string): Promise<RichPostData> {
@@ -802,12 +881,20 @@ export async function scrapeInstagram(url: string): Promise<RichPostData> {
     );
 
   // ── Normalise URL & extract shortcode ─────────────────────────────────────
-  const cleanUrl = url.trim().startsWith("http")
+  let cleanUrl = url.trim().startsWith("http")
     ? url.trim()
     : `https://${url.trim()}`;
-  const reelMatch = cleanUrl.match(/\/reel\/([^/?#]+)/);
-  const pMatch = cleanUrl.match(/\/p\/([^/?#]+)/);
-  const shortcode = reelMatch?.[1] || pMatch?.[1] || "";
+
+  // /share/ links hide the shortcode behind an opaque redirect token
+  if (/instagram\.com\/share\//.test(cleanUrl)) {
+    const resolved = await resolveInstagramShareUrl(cleanUrl);
+    if (resolved) {
+      console.log(`[IG] /share/ link resolved → ${resolved}`);
+      cleanUrl = resolved;
+    }
+  }
+
+  const shortcode = cleanUrl.match(/\/(?:reel|reels|p|tv)\/([^/?#]+)/)?.[1] || "";
 
   const canonicalUrl = shortcode
     ? `https://www.instagram.com/p/${shortcode}/`
@@ -825,25 +912,96 @@ export async function scrapeInstagram(url: string): Promise<RichPostData> {
 
   // Side-channel accumulators (mirroring TikTok's pattern)
   let _creatorComments: string[] = [];
-  let _anchorLocations: string[] = [];
+  const _anchorLocations: string[] = [];
 
-  // ── Layer 0: Free oEmbed (Baseline) ──────────────────────────────────────
-  // We try this FIRST so we have at least some data if paid APIs fail/timeout.
-  try {
-    console.log("[IG L0] Fetching oEmbed baseline…");
-    const oembedUrl = `https://api.instagram.com/oembed/?url=${encodeURIComponent(canonicalUrl)}&maxwidth=640`;
-    const res = await axios.get(oembedUrl, { timeout: 5000 });
-
-    if (res.data) {
-      caption = res.data.title || "";
-      thumbnail = res.data.thumbnail_url || null;
-      author_username = res.data.author_name || "";
-      console.log(
-        `[IG L0] oEmbed ✅ | caption: ${caption.length} chars | author: ${author_username}`,
+  // ── Layer 0: /embed/captioned/ page (free, no key) ────────────────────────
+  // Meta retired the legacy api.instagram.com oEmbed endpoint. The embed page
+  // is still served without login for most public posts and carries the
+  // caption, thumbnail, username — and sometimes the full media JSON.
+  if (shortcode) {
+    try {
+      console.log("[IG L0] Fetching embed/captioned baseline…");
+      const res = await axios.get(
+        `https://www.instagram.com/p/${shortcode}/embed/captioned/`,
+        {
+          headers: {
+            "User-Agent": BROWSER_UA,
+            "Accept-Language": "en-US,en;q=0.9",
+            Accept:
+              "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          },
+          timeout: 8000,
+          validateStatus: () => true,
+        },
       );
+
+      if (res.status === 200 && typeof res.data === "string") {
+        const html: string = res.data;
+
+        // 1) Preferred: the contextJSON script blob with full media data
+        const ctxMatch = html.match(/"contextJSON":"((?:\\.|[^"\\])*)"/);
+        if (ctxMatch) {
+          try {
+            const ctx = JSON.parse(JSON.parse(`"${ctxMatch[1]}"`));
+            const media =
+              ctx?.gql_data?.shortcode_media || ctx?.shortcode_media || null;
+            if (media) {
+              caption =
+                media?.edge_media_to_caption?.edges?.[0]?.node?.text || "";
+              thumbnail = media?.display_url || media?.thumbnail_src || null;
+              author_username = media?.owner?.username || "";
+              if (media?.location?.name) {
+                location_name = media.location.name;
+                _anchorLocations.push(media.location.name);
+                console.log(
+                  `[IG L0] 📍 Location tag from embed: "${location_name}"`,
+                );
+              }
+            }
+          } catch {
+            /* malformed blob — fall through to markup parsing */
+          }
+        }
+
+        // 2) Fallback: parse the embed markup directly
+        if (!caption) {
+          const capMatch = html.match(
+            /<div class="Caption"[^>]*>([\s\S]*?)<div class="CaptionComments"/i,
+          ) || html.match(/<div class="Caption"[^>]*>([\s\S]*?)<\/div>/i);
+          if (capMatch) {
+            caption = decodeHtmlEntities(stripHtmlTags(capMatch[1]));
+          }
+        }
+        if (!thumbnail) {
+          const imgMatch =
+            html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/i) ||
+            html.match(/src="([^"]+)"[^>]*class="EmbeddedMediaImage"/i) ||
+            html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i);
+          if (imgMatch) thumbnail = decodeHtmlEntities(imgMatch[1]);
+        }
+        if (!author_username) {
+          const userMatch =
+            html.match(/class="CaptionUsername"[^>]*>(?:<[^>]+>)*([^<]+)</i) ||
+            html.match(/class="UsernameText"[^>]*>([^<]+)</i) ||
+            html.match(/"username"\s*:\s*"([^"]+)"/);
+          if (userMatch) author_username = userMatch[1].trim();
+        }
+
+        if (caption || thumbnail) {
+          console.log(
+            `[IG L0] embed/captioned ✅ | caption: ${caption.length} chars | thumbnail: ${thumbnail ? "✅" : "❌"} | author: ${author_username || "?"}`,
+          );
+        } else {
+          console.warn(
+            "[IG L0] embed/captioned returned 200 but no parsable data (login wall or removed post)",
+          );
+        }
+      } else {
+        console.warn(`[IG L0] embed/captioned HTTP ${res.status}`);
+      }
+    } catch (e: any) {
+      console.warn("[IG L0] embed/captioned failed:", e.message);
     }
-  } catch (e: any) {
-    console.warn("[IG L0] oEmbed failed:", e.message);
   }
 
   // ── Layer 1: instagram-scraper-api2 /v1/post_info (primary, richer data) ──
@@ -851,16 +1009,20 @@ export async function scrapeInstagram(url: string): Promise<RichPostData> {
   if (rapidKey) {
     try {
       console.log("[IG L1] Trying instagram-scraper-api2 /v1/post_info…");
-      const res = await axios.get(
-        "https://instagram-scraper-api2.p.rapidapi.com/v1/post_info",
-        {
-          params: { code_or_id_or_url: shortcode || canonicalUrl },
-          headers: {
-            "x-rapidapi-key": rapidKey,
-            "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
-          },
-          timeout: 15000,
-        },
+      const res = await withRetry(
+        () =>
+          axios.get(
+            "https://instagram-scraper-api2.p.rapidapi.com/v1/post_info",
+            {
+              params: { code_or_id_or_url: shortcode || canonicalUrl },
+              headers: {
+                "x-rapidapi-key": rapidKey,
+                "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
+              },
+              timeout: 15000,
+            },
+          ),
+        "IG L1",
       );
 
       const d = res.data?.data || res.data;
@@ -935,16 +1097,20 @@ export async function scrapeInstagram(url: string): Promise<RichPostData> {
   if (rapidKey && (!caption || !author_username)) {
     try {
       console.log("[IG L1.5] Trying instagram-scraper-api2 /v1.1/post_info…");
-      const res = await axios.get(
-        "https://instagram-scraper-api2.p.rapidapi.com/v1.1/post_info",
-        {
-          params: { code_or_id_or_url: shortcode || canonicalUrl },
-          headers: {
-            "x-rapidapi-key": rapidKey,
-            "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
-          },
-          timeout: 15000,
-        },
+      const res = await withRetry(
+        () =>
+          axios.get(
+            "https://instagram-scraper-api2.p.rapidapi.com/v1.1/post_info",
+            {
+              params: { code_or_id_or_url: shortcode || canonicalUrl },
+              headers: {
+                "x-rapidapi-key": rapidKey,
+                "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
+              },
+              timeout: 15000,
+            },
+          ),
+        "IG L1.5",
       );
 
       const d = res.data?.data || res.data;

@@ -135,6 +135,12 @@ export interface EngineResult {
   platform: "instagram" | "tiktok";
   post_id: string;
   cached: boolean;
+  /** Set when travel_spots is empty so the UI can explain what went wrong */
+  failure_reason?:
+    | "weak_signals"
+    | "no_spots_found"
+    | "ai_timeout"
+    | "scrape_failed";
   rich_data?: {
     location_name: string | null;
     hashtags: string[];
@@ -379,7 +385,7 @@ export async function processPost(url: string): Promise<EngineResult> {
   if (!platform)
     throw new Error("Unsupported URL. Use an Instagram or TikTok link.");
 
-  const postId = extractPostId(url, platform);
+  let postId = extractPostId(url, platform);
   console.log(
     `[Engine] Processing ${platform} post | id: ${postId || "unknown"}`,
   );
@@ -399,6 +405,14 @@ export async function processPost(url: string): Promise<EngineResult> {
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(`Scraper failed: ${msg}`);
+  }
+
+  // Scrapers can recover the real post ID from opaque URLs (/share/ links,
+  // short vm./vt. links) — prefer it so caching works for those too.
+  if (richData.post_id && richData.post_id !== postId) {
+    postId = richData.post_id;
+    const recovered = await checkCache(postId);
+    if (recovered) return recovered;
   }
 
   const creatorComments: string[] =
@@ -494,11 +508,13 @@ export async function processPost(url: string): Promise<EngineResult> {
     const captionLen = richData.caption.length;
 
     // If no explicit location, no comments, and short caption/no bio, it's hopeless.
+    // Threshold is deliberately low (20 chars): even a short caption plus the
+    // Stage-1 extractor is often enough, and the embed layer now feeds captions.
     const isWeak =
       !hasLocation &&
       !hasComments &&
       (!hasBio || richData.user_bio.length < 10) &&
-      captionLen < 50 &&
+      captionLen < 20 &&
       !hasHashtags;
 
     if (isWeak) {
@@ -506,6 +522,7 @@ export async function processPost(url: string): Promise<EngineResult> {
         `[Engine] Weak signals detected for Instagram post — skipping legacy AI to avoid timeout.`,
       );
       return {
+        failure_reason: "weak_signals",
         travel_spots: [],
         thumbnail: richData.thumbnail,
         original_link: url,
@@ -541,6 +558,7 @@ export async function processPost(url: string): Promise<EngineResult> {
         `[Engine] Instagram legacy AI fallback timed out/failed — returning partial empty result. reason="${msg}"`,
       );
       return {
+        failure_reason: "ai_timeout",
         travel_spots: [],
         thumbnail: richData.thumbnail,
         original_link: url,
@@ -568,6 +586,7 @@ export async function processPost(url: string): Promise<EngineResult> {
 
   if (raw_spots.length === 0) {
     return {
+      failure_reason: "no_spots_found",
       travel_spots: [],
       thumbnail: richData.thumbnail,
       original_link: url,
